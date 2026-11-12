@@ -67,8 +67,11 @@ Il primo restore richiede NuGet per l'SDK Godot e NAudio.
 - WAV PCM a 16 bit, con frequenza e canali mono/stereo dell'ingresso.
 - Lista sotto la console delle ultime **10 registrazioni**, con durata e stato
   **Temporanea / Salvata**. La più recente viene selezionata automaticamente.
-- **Ascolta / Ferma ascolto** sulla registrazione selezionata, anche prima di
-  esportarla. Il doppio clic su una riga avvia l'ascolto.
+- Due pulsanti di ascolto sulla registrazione selezionata: **▶ / ⏸** per
+  riprodurre, mettere in pausa e riprendere dallo stesso punto, **■** per fermare.
+  Il doppio clic su una riga avvia l'ascolto anche prima di esportarla.
+- Registrazione con **● rosso** e arresto con **■**. I tooltip spiegano ogni icona;
+  gli SVG sono risorse modificabili in `new-game-project/icons` e assegnate nella scena.
 - **Salva WAV** esporta la registrazione selezionata, lasciandola nella cronologia.
 - Una nuova registrazione conserva le precedenti e ferma l'eventuale ascolto.
 - Conferma di uscita se nella sessione rimangono registrazioni non esportate.

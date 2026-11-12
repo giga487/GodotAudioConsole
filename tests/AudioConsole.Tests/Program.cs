@@ -23,6 +23,12 @@ if (args.Contains("--playback-hardware"))
     using var playback = new WasapiAudioPlayback();
     playback.Play(Path.Combine(output, "silent.wav"));
     Check(playback.IsPlaying, "WASAPI playback must start.");
+    await Task.Delay(200);
+    playback.Pause();
+    Check(playback.IsPaused && !playback.IsPlaying, "WASAPI must enter paused state.");
+    await Task.Delay(200);
+    playback.Resume();
+    Check(playback.IsPlaying && !playback.IsPaused, "WASAPI must resume the same stream.");
     await Task.Delay(1800);
     Check(playback.Error == null, "WASAPI playback must not fail: " + playback.Error);
     Check(!playback.IsPlaying, "Playback must finish automatically at end of file.");
@@ -148,6 +154,10 @@ else
         history.PlaySelected();
         firstTemporary = historyPlayback.Path;
         Check(File.Exists(firstTemporary) && history.GetSnapshot().IsPlaying, "Unsaved take must play from a real temporary WAV.");
+        history.PausePlayback();
+        Check(history.GetSnapshot().IsPaused && !history.GetSnapshot().IsPlaying, "Pause preserves the active playback session.");
+        history.PlaySelected();
+        Check(history.GetSnapshot().IsPlaying && historyPlayback.PlayCalls == 1, "Play after pause resumes without opening the WAV again.");
         history.StopPlayback();
         Check(!history.GetSnapshot().IsPlaying, "Stop playback must update state.");
         history.SaveWav(preservedExport);
@@ -208,15 +218,21 @@ internal sealed class FakeInput : IAudioInput
 internal sealed class FakePlayback : IAudioPlayback
 {
     public bool IsPlaying { get; private set; }
+    public bool IsPaused { get; private set; }
+    public int PlayCalls { get; private set; }
     public string? Error => null;
     public string? Path { get; private set; }
     public void Play(string wavPath)
     {
         if (!File.Exists(wavPath)) throw new FileNotFoundException("Missing temporary recording.", wavPath);
         Path = wavPath;
+        PlayCalls++;
+        IsPaused = false;
         IsPlaying = true;
     }
-    public void Stop() => IsPlaying = false;
+    public void Pause() { IsPaused = IsPlaying; IsPlaying = false; }
+    public void Resume() { IsPlaying = IsPaused; IsPaused = false; }
+    public void Stop() { IsPlaying = false; IsPaused = false; }
     public void Complete() => IsPlaying = false;
     public void Dispose() => Stop();
 }

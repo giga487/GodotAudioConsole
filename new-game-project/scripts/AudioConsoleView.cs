@@ -5,6 +5,8 @@ using Godot;
 /// <summary>Presentation only: renders snapshots and forwards user commands to the DLL.</summary>
 public partial class AudioConsoleView : Control
 {
+    [Export] public Texture2D PlayIcon { get; set; } = null!;
+    [Export] public Texture2D PauseIcon { get; set; } = null!;
     public IAudioInput? AudioInputOverride { private get; set; }
     public IAudioPlayback? AudioPlaybackOverride { private get; set; }
     private AudioConsoleService? _service;
@@ -51,8 +53,10 @@ public partial class AudioConsoleView : Control
         _record.Disabled = !state.InputAvailable || state.IsRecording;
         _stop.Disabled = !state.IsRecording;
         _save.Disabled = state.IsRecording || !state.HasRecording;
-        _play.Disabled = state.IsRecording || !state.HasRecording || state.IsPlaying;
-        _stopPlayback.Disabled = !state.IsPlaying;
+        _play.Disabled = state.IsRecording || !state.HasRecording;
+        _play.Icon = state.IsPlaying ? PauseIcon : PlayIcon;
+        _play.TooltipText = state.IsPlaying ? "Pausa riproduzione" : state.IsPaused ? "Riprendi riproduzione" : "Riproduci registrazione selezionata";
+        _stopPlayback.Disabled = !state.IsPlaying && !state.IsPaused;
         RenderHistory(state);
         _devices.Disabled = state.IsRecording || _deviceList.Count == 0;
         _refresh.Disabled = state.IsRecording;
@@ -108,7 +112,7 @@ public partial class AudioConsoleView : Control
         try
         {
             _service.SelectRecording(_displayedHistory[index].Id);
-            _status.Text = _displayedHistory[index].Name + " selezionata. Premi Ascolta o Salva WAV.";
+            _status.Text = _displayedHistory[index].Name + " selezionata. Premi ▶ o Salva WAV.";
         }
         catch (Exception error) { _status.Text = error.Message; }
     }
@@ -121,6 +125,16 @@ public partial class AudioConsoleView : Control
             _status.Text = "Ascolto della registrazione selezionata…";
         }
         catch (Exception error) { _status.Text = "Ascolto non riuscito: " + error.Message; }
+    }
+
+    private void TogglePlayback()
+    {
+        if (_service?.GetSnapshot().IsPlaying == true)
+        {
+            _service.PausePlayback();
+            _status.Text = "Ascolto in pausa.";
+        }
+        else PlaySelected();
     }
 
     private void RefreshDevices()
@@ -180,7 +194,7 @@ public partial class AudioConsoleView : Control
         try { _service?.StopRecording(); }
         catch (Exception error) { _status.Text = "Copia temporanea non riuscita: " + error.Message; return; }
         _status.Text = _service?.GetSnapshot().HasRecording == true
-            ? "Registrazione aggiunta alla lista. Premi Ascolta o Salva WAV."
+            ? "Registrazione aggiunta alla lista. Premi ▶ o Salva WAV."
             : "Nessun audio ricevuto. Controlla il microfono e riprova.";
     }
 
@@ -261,7 +275,7 @@ public partial class AudioConsoleView : Control
             SelectRecording(index);
             PlaySelected();
         };
-        _play.Pressed += PlaySelected;
+        _play.Pressed += TogglePlayback;
         _stopPlayback.Pressed += () =>
         {
             _service?.StopPlayback();

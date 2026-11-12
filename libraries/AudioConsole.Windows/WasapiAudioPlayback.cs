@@ -12,6 +12,7 @@ public sealed class WasapiAudioPlayback : IAudioPlayback
     private WaveFileReader? _reader;
     private volatile string? _error;
     public bool IsPlaying => _output?.PlaybackState == PlaybackState.Playing && _error == null;
+    public bool IsPaused => _output?.PlaybackState == PlaybackState.Paused && _error == null;
     public string? Error => _error;
 
     public void Play(string wavPath)
@@ -36,6 +37,16 @@ public sealed class WasapiAudioPlayback : IAudioPlayback
     private void OnPlaybackStopped(object? sender, StoppedEventArgs args)
     {
         if (sender == _output) _error = args.Exception?.Message;
+    }
+
+    public void Pause()
+    {
+        if (IsPlaying) _output!.Pause();
+    }
+
+    public void Resume()
+    {
+        if (IsPaused) _output!.Play();
     }
 
     public void Stop()

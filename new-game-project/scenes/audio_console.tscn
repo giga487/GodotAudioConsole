@@ -1,8 +1,12 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/AudioConsoleView.cs" id="1_console"]
 [ext_resource type="Theme" path="res://themes/console_theme.tres" id="2_theme"]
 [ext_resource type="PackedScene" path="res://scenes/waveform_display.tscn" id="3_display"]
+[ext_resource type="Texture2D" path="res://icons/record.svg" id="4_record"]
+[ext_resource type="Texture2D" path="res://icons/play.svg" id="5_play"]
+[ext_resource type="Texture2D" path="res://icons/pause.svg" id="6_pause"]
+[ext_resource type="Texture2D" path="res://icons/stop.svg" id="7_stop"]
 
 [node name="AudioConsole" type="Control"]
 layout_mode = 3
@@ -13,6 +17,8 @@ grow_horizontal = 2
 grow_vertical = 2
 theme = ExtResource("2_theme")
 script = ExtResource("1_console")
+PlayIcon = ExtResource("5_play")
+PauseIcon = ExtResource("6_pause")
 
 [node name="Background" type="ColorRect" parent="."]
 layout_mode = 1
@@ -115,15 +121,19 @@ theme_override_constants/separation = 12
 
 [node name="RecordButton" type="Button" parent="Margin/Scroll/ConsoleLayout/TransportRow"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(52, 48)
 layout_mode = 2
 disabled = true
-text = "Registra"
+tooltip_text = "Avvia registrazione"
+icon = ExtResource("4_record")
 
 [node name="StopButton" type="Button" parent="Margin/Scroll/ConsoleLayout/TransportRow"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(52, 48)
 layout_mode = 2
 disabled = true
-text = "Stop"
+tooltip_text = "Ferma registrazione"
+icon = ExtResource("7_stop")
 
 [node name="SaveButton" type="Button" parent="Margin/Scroll/ConsoleLayout/TransportRow"]
 unique_name_in_owner = true
@@ -185,15 +195,19 @@ theme_override_constants/separation = 12
 
 [node name="PlayButton" type="Button" parent="Margin/Scroll/ConsoleLayout/HistorySection/PlaybackRow"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(52, 48)
 layout_mode = 2
 disabled = true
-text = "Ascolta"
+tooltip_text = "Riproduci registrazione selezionata"
+icon = ExtResource("5_play")
 
 [node name="StopPlaybackButton" type="Button" parent="Margin/Scroll/ConsoleLayout/HistorySection/PlaybackRow"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(52, 48)
 layout_mode = 2
 disabled = true
-text = "Ferma ascolto"
+tooltip_text = "Ferma riproduzione"
+icon = ExtResource("7_stop")
 
 [node name="HistoryHint" type="Label" parent="Margin/Scroll/ConsoleLayout/HistorySection"]
 layout_mode = 2

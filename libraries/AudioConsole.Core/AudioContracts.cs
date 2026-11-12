@@ -24,8 +24,11 @@ public interface IAudioInput : IDisposable
 public interface IAudioPlayback : IDisposable
 {
     bool IsPlaying { get; }
+    bool IsPaused { get; }
     string? Error { get; }
     void Play(string wavPath);
+    void Pause();
+    void Resume();
     void Stop();
 }
 
@@ -53,4 +56,5 @@ public sealed record ConsoleSnapshot(
     RecordingInfo[] Recordings,
     Guid? SelectedRecordingId,
     bool IsPlaying,
+    bool IsPaused,
     string? PlaybackError);

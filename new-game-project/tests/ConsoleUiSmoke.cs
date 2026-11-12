@@ -13,7 +13,7 @@ public partial class ConsoleUiSmoke : Node
         try
         {
             var view = GD.Load<PackedScene>("res://scenes/audio_console.tscn").Instantiate<AudioConsoleView>();
-            Check(view.GetNode<Button>("%RecordButton").Text == "Registra",
+            Check(view.GetNode<Button>("%RecordButton").Icon != null && view.GetNode<Button>("%RecordButton").Text == "",
                 "Controls must be authored in the scene before _Ready runs.");
             Check(view.GetNode<Panel>("%WaveformDisplay").GetNode<Control>("CenterLine") != null,
                 "Display background and center line must exist without runtime drawing.");
@@ -21,41 +21,46 @@ public partial class ConsoleUiSmoke : Node
             view.AudioPlaybackOverride = new SyntheticPlayback();
             AddChild(view);
             await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
-            var buttons = view.FindChildren("*", "Button", true, false).OfType<Button>().ToArray();
-            Button Button(string text) => buttons.Single(button => button.Text == text);
-            void Press(string text) => Button(text).EmitSignal(BaseButton.SignalName.Pressed);
-            Check(!Button("Registra").Disabled && Button("Stop").Disabled && Button("Salva WAV").Disabled,
+            Button Button(string name) => view.GetNode<Button>("%" + name);
+            void Press(string name) => Button(name).EmitSignal(BaseButton.SignalName.Pressed);
+            Check(!Button("RecordButton").Disabled && Button("StopButton").Disabled && Button("SaveButton").Disabled,
                 "Initial button states.");
-            Press("Registra");
+            Press("RecordButton");
             await ToSignal(GetTree().CreateTimer(0.3), SceneTreeTimer.SignalName.Timeout);
-            Check(Button("Registra").Disabled && !Button("Stop").Disabled, "Recording button states.");
+            Check(Button("RecordButton").Disabled && !Button("StopButton").Disabled, "Recording button states.");
             view.FindChildren("*", "HSlider", true, false).OfType<HSlider>().Single().Value = 50;
             await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
-            Press("Stop");
+            Press("StopButton");
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-            Check(!Button("Salva WAV").Disabled, "Stopped recording can be saved.");
+            Check(!Button("SaveButton").Disabled, "Stopped recording can be saved.");
             var confirmation = view.GetChildren().OfType<ConfirmationDialog>().Single(dialog => dialog is not FileDialog);
             var list = view.GetNode<ItemList>("%RecordingList");
             Check(list.ItemCount == 1 && list.GetItemText(0).Contains("Temporanea"), "Stopped take must appear in history before export.");
-            Press("Ascolta");
+            Press("PlayButton");
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-            Check(!Button("Ferma ascolto").Disabled, "Playback controls must reflect playback state.");
-            Press("Ferma ascolto");
+            Check(!Button("StopPlaybackButton").Disabled && Button("PlayButton").Icon.ResourcePath.EndsWith("pause.svg"), "Playing switches the button to PAUSE.");
+            Press("PlayButton");
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(Button("PlayButton").Icon.ResourcePath.EndsWith("play.svg") && !Button("StopPlaybackButton").Disabled,
+                "Paused playback offers PLAY and STOP.");
+            Press("PlayButton");
+            Press("StopPlaybackButton");
             var dialog = view.GetChildren().OfType<FileDialog>().Single();
             var path = ProjectSettings.GlobalizePath("res://.godot/csharp-ui-test.wav");
             dialog.EmitSignal(FileDialog.SignalName.FileSelected, path);
             Check(System.IO.File.Exists(path), "UI command must save through the external DLL.");
-            Press("Registra");
+            Press("RecordButton");
             await ToSignal(GetTree().CreateTimer(0.2), SceneTreeTimer.SignalName.Timeout);
-            Press("Stop");
+            Press("StopButton");
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             Check(list.ItemCount == 2, "A second take must preserve the previous one.");
             list.EmitSignal(ItemList.SignalName.ItemSelected, 1L);
-            Press("Ascolta");
-            Press("Ferma ascolto");
+            Press("PlayButton");
+            Press("StopPlaybackButton");
             view.Notification((int)NotificationWMCloseRequest);
             Check(confirmation.Visible, "Closing with unsaved audio requires confirmation.");
             confirmation.Hide();
@@ -105,13 +110,17 @@ public partial class ConsoleUiSmoke : Node
     private sealed class SyntheticPlayback : IAudioPlayback
     {
         public bool IsPlaying { get; private set; }
+        public bool IsPaused { get; private set; }
         public string? Error => null;
         public void Play(string wavPath)
         {
             Check(System.IO.File.Exists(wavPath), "Playback must use an existing temporary file.");
             IsPlaying = true;
+            IsPaused = false;
         }
-        public void Stop() => IsPlaying = false;
+        public void Pause() { IsPaused = IsPlaying; IsPlaying = false; }
+        public void Resume() { IsPlaying = IsPaused; IsPaused = false; }
+        public void Stop() { IsPlaying = false; IsPaused = false; }
         public void Dispose() => Stop();
     }
 }

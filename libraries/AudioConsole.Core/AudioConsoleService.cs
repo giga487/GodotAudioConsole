@@ -149,7 +149,17 @@ public sealed class AudioConsoleService : IDisposable
             if (_isRecording) throw new InvalidOperationException("Ferma la registrazione prima dell'ascolto.");
             if (_playback == null) throw new NotSupportedException("Riproduzione audio non disponibile.");
             var id = _selectedRecordingId ?? throw new InvalidOperationException("Seleziona una registrazione.");
-            _playback.Play(_recordings.GetPath(id));
+            if (_playback.IsPaused) _playback.Resume();
+            else _playback.Play(_recordings.GetPath(id));
+        }
+    }
+
+    public void PausePlayback()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_playback?.IsPlaying == true) _playback.Pause();
         }
     }
 
@@ -182,7 +192,7 @@ public sealed class AudioConsoleService : IDisposable
             return new(_inputAvailable, _isRecording, selected != null || _pcm.Length > 0,
                 _pcm.Length > 0 || recordings.Any(recording => !recording.IsExported),
                 _volume, elapsed, signal, _inputError, history, recordings, _selectedRecordingId,
-                _playback?.IsPlaying == true, _playback?.Error);
+                _playback?.IsPlaying == true, _playback?.IsPaused == true, _playback?.Error);
         }
     }
 
