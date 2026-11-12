@@ -38,7 +38,8 @@ public partial class AudioConsoleView
     {
         // In narrow windows the authored sidebar overlays the console instead of squeezing its controls.
         var docked = Size.X >= 1120;
-        _mainMargin.OffsetRight = _effectsSidebar.Visible && docked ? -376 : 0;
+        // Leave 48px between the recording workspace and the effects panel.
+        _mainMargin.OffsetRight = _effectsSidebar.Visible && docked ? -408 : 0;
         _effectsBackdrop.Visible = _effectsSidebar.Visible && !docked;
     }
 
