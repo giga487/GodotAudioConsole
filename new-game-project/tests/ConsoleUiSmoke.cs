@@ -25,9 +25,39 @@ public partial class ConsoleUiSmoke : Node
             var setupPath = ProjectSettings.GlobalizePath($"res://.godot/test-last-setup-{Guid.NewGuid():N}.json");
             view.SetupFileOverride = setupPath;
             AddChild(view);
+            view.SetDeferred(Control.PropertyName.Size, new Vector2(1280, 900)); // Headless windows expose a 64px viewport.
             await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
             Button Button(string name) => view.GetNode<Button>("%" + name);
             void Press(string name) => Button(name).EmitSignal(BaseButton.SignalName.Pressed);
+            var sidebar = view.GetNode<Control>("%EffectsSidebar");
+            var backdrop = view.GetNode<Control>("%EffectsBackdrop");
+            var mainMargin = view.GetNode<Control>("Margin");
+            Check(sidebar.Visible && !backdrop.Visible &&
+                sidebar.IsAncestorOf(view.GetNode<Control>("%EqualizerPanel")) && sidebar.IsAncestorOf(view.GetNode<Control>("%EchoPanel")),
+                $"Both effects are authored inside the docked right sidebar (size={view.Size}, visible={sidebar.Visible}, backdrop={backdrop.Visible}).");
+            var dockedWidth = mainMargin.Size.X;
+            Press("CloseEffects");
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(!sidebar.Visible && !Button("EffectsToggle").ButtonPressed && mainMargin.Size.X > dockedWidth + 300,
+                "Closing the sidebar returns its space to the console.");
+            Button("EffectsToggle").ButtonPressed = true;
+            var wideSize = view.Size;
+            view.Size = new Vector2(640, 480);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(sidebar.Visible && backdrop.Visible && mainMargin.OffsetRight == 0 &&
+                sidebar.GetGlobalRect().End.X <= view.GetGlobalRect().End.X,
+                "Narrow windows use a right drawer without compressing the console.");
+            backdrop.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true });
+            Check(!sidebar.Visible && !backdrop.Visible, "Clicking outside the narrow drawer closes it.");
+            Button("EffectsToggle").ButtonPressed = true;
+            view._UnhandledKeyInput(new InputEventKey { Pressed = true, Keycode = Key.Escape });
+            Check(!sidebar.Visible, "Escape closes the effects drawer.");
+            view.Size = wideSize;
+            Button("EffectsToggle").ButtonPressed = true;
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             var sourceMode = view.GetNode<OptionButton>("%SourceMode");
             void SwitchSource(int index)
             {
@@ -139,6 +169,15 @@ public partial class ConsoleUiSmoke : Node
             Check(_redirect.IsActive && _input.IsRunning && Button("StopButton").Disabled &&
                 echoPanel.GetNode<Label>("Parameters/DelayValue").Text == "300 ms",
                 "Echo can be adjusted while sending live without REC.");
+            Press("CloseEffects");
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(!sidebar.Visible && _redirect.IsActive && _input.IsRunning && echoEnabled.ButtonPressed &&
+                Button("EffectsToggle").Text.Contains("1"),
+                "Hiding effects preserves enabled echo and live routing and shows the active count.");
+            Button("EffectsToggle").ButtonPressed = true;
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(sidebar.Visible && echoPanel.GetNode<HSlider>("Parameters/Delay").Value == 300,
+                "Reopening the sidebar preserves effect controls.");
             if (DisplayServer.GetName() != "headless")
             {
                 await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
@@ -307,6 +346,7 @@ public partial class ConsoleUiSmoke : Node
                 reopened.AudioRedirectOverride = new SyntheticRedirect();
                 reopened.SetupFileOverride = setupPath;
                 AddChild(reopened);
+                reopened.SetDeferred(Control.PropertyName.Size, new Vector2(1280, 900));
                 return reopened;
             }
             var restored = Reopen();

@@ -121,6 +121,7 @@ public partial class AudioConsoleView : Control
         RenderSources(state);
         RenderEqualizer(state.Equalizer);
         RenderEcho(state.Echo);
+        RenderEffectsSummary(state);
         RenderRedirect(state);
         _record.Disabled = !state.InputAvailable || state.IsRecording;
         _stop.Disabled = !state.IsRecording;
@@ -497,6 +498,7 @@ public partial class AudioConsoleView : Control
 
     private void BindControls()
     {
+        BindEffectsSidebar();
         BindEqualizerControls();
         BindEchoControls();
         BindRedirectControls();

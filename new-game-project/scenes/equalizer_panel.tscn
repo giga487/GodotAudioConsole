@@ -11,7 +11,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 15
-text = "EQUALIZZATORE • MIX LIVE"
+text = "EQUALIZZATORE"
 
 [node name="Enabled" type="CheckBox" parent="Header"]
 layout_mode = 2
@@ -25,7 +25,7 @@ tooltip_text = "Riporta tutte le regolazioni a 0 dB."
 
 [node name="Bands" type="GridContainer" parent="."]
 layout_mode = 2
-columns = 6
+columns = 3
 theme_override_constants/h_separation = 8
 theme_override_constants/v_separation = 6
 

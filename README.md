@@ -36,13 +36,15 @@ la composizione nella vista, mantenendo invariata la logica applicativa.
 L'interfaccia è definita in risorse Godot, visibili anche senza avviare il progetto:
 
 - `new-game-project/scenes/audio_console.tscn`: layout, etichette, selettore,
-  slider, pulsanti, timer, cronologia, comandi di ascolto e finestre di salvataggio/conferma.
+  slider, pulsanti, timer, cronologia, pannello effetti laterale, comandi di ascolto e finestre di salvataggio/conferma.
 - `new-game-project/scenes/waveform_display.tscn`: display riutilizzabile con
   pannello verde, bordo, griglia e linea centrale.
 - `new-game-project/scenes/recording_editor.tscn`: timeline selezionabile, secondo
   timer, livelli L/R, campi di inizio/fine e pulsante di ritaglio.
 - `new-game-project/scenes/audio_source_strip.tscn`: riga riutilizzabile per una
   sorgente attiva, con nome, livello, volume e rimozione.
+- `new-game-project/scenes/equalizer_panel.tscn` ed `echo_panel.tscn`: controlli
+  degli effetti ospitati nel pannello destro, modificabili nelle rispettive scene.
 - `new-game-project/themes/console_theme.tres`: font, colori e stili dei pulsanti.
 
 Apri la scena principale nella vista 2D per modificarne i nodi e le proprietà
@@ -71,6 +73,14 @@ esterne e il progetto di test ed è apribile in Visual Studio/Rider.
 Il primo restore richiede NuGet per l'SDK Godot e NAudio.
 
 ## Utilizzo
+
+Equalizzatore ed Echo sono nel pannello **Effetti** a destra, con scorrimento
+indipendente. **×**, **Esc** o il pulsante **Effetti** nell'intestazione chiudono
+il pannello, restituendo spazio alla console; lo stesso pulsante lo riapre e
+mostra quanti effetti sono attivi. Chiudere il pannello mantiene impostazioni,
+effetti e invio audio. Nelle finestre strette il pannello si apre sopra la parte
+destra della console; anche un clic sullo sfondo oscurato lo chiude. Intestazione
+e pulsante Effetti restano visibili mentre scorri la console.
 
 - Display verde con forma d'onda nera in tempo reale, anche prima di registrare.
 - Selettore **Sorgente**: scegli **Microfono** oppure **Audio del PC**, poi un

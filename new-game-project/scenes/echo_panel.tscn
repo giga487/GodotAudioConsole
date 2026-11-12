@@ -11,7 +11,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 15
-text = "ECHO • MIX LIVE"
+text = "ECHO"
 
 [node name="Enabled" type="CheckBox" parent="Header"]
 layout_mode = 2
