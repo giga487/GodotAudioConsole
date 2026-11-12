@@ -18,7 +18,7 @@ public partial class ConsoleUiSmoke : Node
                 "Controls must be authored in the scene before _Ready runs.");
             Check(view.GetNode<Panel>("%WaveformDisplay").GetNode<Control>("CenterLine") != null,
                 "Display background and center line must exist without runtime drawing.");
-            view.AudioInputOverride = _input;
+            view.AudioInputOverride = new MultiSourceAudioInput(_input.CreateInput);
             view.AudioPlaybackOverride = _playback;
             AddChild(view);
             await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
@@ -35,10 +35,12 @@ public partial class ConsoleUiSmoke : Node
             SwitchSource(1);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-            Check(!_input.IsRunning && Button("RecordButton").Disabled, "Missing outputs must not leave the microphone recording under PC mode.");
+            Check(_input.IsRunning && !Button("RecordButton").Disabled && Button("AddSourceButton").Disabled,
+                "Browsing unavailable outputs preserves the already-active microphone.");
             _input.NoOutputs = false;
             Press("RefreshButton");
-            Check(_input.LastDeviceId == "test-output", "PC mode refresh opens an output endpoint.");
+            Check(_input.LastDeviceId == "test" && view.GetNode<OptionButton>("%SourceDeviceSelect").ItemCount == 1,
+                "Refreshing available devices does not replace the active mix.");
             SwitchSource(0);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
@@ -62,7 +64,7 @@ public partial class ConsoleUiSmoke : Node
             Check(sourceMode.Disabled, "Source switching is disabled while recording.");
             SwitchSource(1);
             Check(sourceMode.Selected == 0 && _input.LastDeviceId == "test", "A forced source-change signal cannot bypass the recording guard.");
-            view.FindChildren("*", "HSlider", true, false).OfType<HSlider>().Single().Value = 50;
+            view.GetNode<HSlider>("%VolumeSlider").Value = 50;
             await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
             Press("StopButton");
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
@@ -157,17 +159,47 @@ public partial class ConsoleUiSmoke : Node
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             Check(list.ItemCount == 3 && list.GetItemText(0).Contains("Ritaglio"), "Generating selection adds a crop without replacing either original take.");
             SwitchSource(1);
-            Check(_input.LastDeviceId == "test-output", "Switching to PC mode selects the output endpoint.");
+            Press("AddSourceButton");
+            Check(_input.LastDeviceId == "test-output", "Adding a PC device opens it alongside the microphone.");
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            var sourceRows = view.GetNode<VBoxContainer>("%SourceRows");
+            Check(sourceRows.GetChildCount() == 2, "Both sources have visible authored mixer strips.");
+            Press("AddSourceButton");
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(sourceRows.GetChildCount() == 2, "Adding a source twice does not duplicate it.");
+            var sourceStrip = sourceRows.GetChildren().OfType<AudioSourceStripView>().Last();
+            sourceStrip.GetNode<HSlider>("Gain").Value = 50;
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(sourceStrip.GetNode<Label>("GainValue").Text == "50%", "Each source has its own gain control.");
             Check(list.ItemCount == 3, "Changing capture mode preserves recordings and clips.");
             Press("PlayButton");
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-            Check(view.GetNode<Label>("%SignalLabel").Text.Contains("PC SOSPESO") && !_input.IsRunning,
-                "Loopback mode must be suspended while replaying a take.");
+            Check(view.GetNode<Label>("%SignalLabel").Text.Contains("MIX SOSPESO") && !_input.IsRunning,
+                "All source captures are suspended while replaying a take.");
             Press("StopPlaybackButton");
-            Check(_input.LastDeviceId == "test-output" && _input.IsRunning, "Stopping replay restores PC capture.");
+            Check(_input.LastDeviceId == "test-output" && _input.IsRunning, "Stopping replay restores all mixer sources.");
+            sourceStrip.GetNode<Button>("Remove").EmitSignal(BaseButton.SignalName.Pressed);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(sourceRows.GetChildCount() == 1 && list.ItemCount == 3, "Removing a source preserves recordings and the other source.");
+            sourceRows.GetChildren().OfType<AudioSourceStripView>().Single().GetNode<Button>("Remove").EmitSignal(BaseButton.SignalName.Pressed);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(sourceRows.GetChildCount() == 0 && Button("RecordButton").Disabled && !_input.IsRunning,
+                "Removing the final source stops capture and disables recording.");
+            Press("AddSourceButton"); // PC picker is still selected.
+            SwitchSource(0);
+            Press("AddSourceButton");
+            await ToSignal(GetTree().CreateTimer(0.2), SceneTreeTimer.SignalName.Timeout);
+            Press("RecordButton");
+            await ToSignal(GetTree().CreateTimer(0.2), SceneTreeTimer.SignalName.Timeout);
+            Press("StopButton");
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(sourceRows.GetChildCount() == 2 && list.ItemCount == 4, "Two sources produce one new mixed recording in history.");
             view.Notification((int)NotificationWMCloseRequest);
             Check(confirmation.Visible, "Closing with unsaved audio requires confirmation.");
             confirmation.Hide();
@@ -197,25 +229,33 @@ public partial class ConsoleUiSmoke : Node
     private sealed class SyntheticInput : IAudioInput
     {
         private bool _running;
-        public bool IsRunning => _running;
+        private readonly SyntheticInput _owner;
+        private readonly List<SyntheticInput> _instances = [];
+        public SyntheticInput() => _owner = this;
+        private SyntheticInput(SyntheticInput owner) { _owner = owner; owner._instances.Add(this); }
+        public IAudioInput CreateInput() => new SyntheticInput(this);
+        public bool IsRunning => _instances.Any(instance => instance._running);
         private long _sampleIndex;
         public event Action<ReadOnlyMemory<float>>? SamplesAvailable;
         public event Action<string>? Failed { add { } remove { } }
         public bool NoOutputs { get; set; }
         public string? LastDeviceId { get; private set; }
         public IReadOnlyList<AudioInputDevice> GetDevices(AudioSourceKind source = AudioSourceKind.Microphone)
-            => source == AudioSourceKind.ComputerOutput ? NoOutputs ? [] : [new("test-output", "Uscita PC sintetica • test C#", source)]
+            => source == AudioSourceKind.ComputerOutput ? _owner.NoOutputs ? [] : [new("test-output", "Uscita PC sintetica • test C#", source)]
                 : [new("test", "Microfono sintetico • test C#")];
-        public AudioFormat Start(string deviceId) { _running = true; LastDeviceId = deviceId; return new(48000, 1); }
+        public AudioFormat Start(string deviceId) { _running = true; _owner.LastDeviceId = deviceId; return StereoMixer.Format; }
         public void Stop() => _running = false;
-        public void Dispose() => Stop();
+        public void Dispose() { Stop(); _owner._instances.Remove(this); }
         public void PushTone(double delta)
         {
-            if (!_running) return;
-            var samples = new float[(int)(48000 * delta)];
-            for (var i = 0; i < samples.Length; i++)
-                samples[i] = (float)(Math.Sin(2 * Math.PI * 220 * _sampleIndex++ / 48000) * 0.25);
-            SamplesAvailable?.Invoke(samples);
+            foreach (var instance in _instances.ToArray())
+            {
+                if (!instance._running) continue;
+                var samples = new float[(int)(48000 * delta) * 2];
+                for (var i = 0; i < samples.Length; i += 2)
+                    samples[i] = samples[i + 1] = (float)(Math.Sin(2 * Math.PI * 220 * instance._sampleIndex++ / 48000) * 0.25);
+                instance.SamplesAvailable?.Invoke(samples);
+            }
         }
     }
 

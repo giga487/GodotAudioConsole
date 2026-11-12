@@ -7,6 +7,7 @@ public partial class AudioConsoleView : Control
 {
     [Export] public Texture2D PlayIcon { get; set; } = null!;
     [Export] public Texture2D PauseIcon { get; set; } = null!;
+    [Export] public PackedScene SourceStripScene { get; set; } = null!;
     public IAudioInput? AudioInputOverride { private get; set; }
     public IAudioPlayback? AudioPlaybackOverride { private get; set; }
     private AudioConsoleService? _service;
@@ -16,6 +17,10 @@ public partial class AudioConsoleView : Control
     private OptionButton _devices = null!;
     private OptionButton _sourceMode = null!;
     private AudioSourceKind _sourceKind;
+    private VBoxContainer _sourceRows = null!;
+    private Label _sourceSummary = null!, _emptySources = null!;
+    private Button _addSource = null!;
+    private readonly Dictionary<string, AudioSourceStripView> _strips = [];
     private Button _refresh = null!, _record = null!, _stop = null!, _save = null!;
     private Button _play = null!, _stopPlayback = null!;
     private ItemList _historyList = null!;
@@ -45,13 +50,14 @@ public partial class AudioConsoleView : Control
         {
             IAudioInput input;
             if (AudioInputOverride != null) input = AudioInputOverride;
-            else if (OperatingSystem.IsWindows()) input = new WasapiAudioInput();
+            else if (OperatingSystem.IsWindows()) input = WasapiAudioInput.CreateMixer();
             else throw new PlatformNotSupportedException("Il backend audio attuale richiede Windows.");
             var playback = AudioPlaybackOverride;
             if (playback == null && OperatingSystem.IsWindows() && AudioInputOverride == null)
                 playback = new WasapiAudioPlayback();
             _service = new AudioConsoleService(input, playback);
             RefreshDevices();
+            if (_deviceList.Count > 0) AddSource();
         }
         catch (Exception error) { ShowError(error); }
     }
@@ -63,6 +69,7 @@ public partial class AudioConsoleView : Control
         var state = _service.GetSnapshot();
         _waveform.ShowHistory(state.Waveform);
         RenderEditor(state);
+        RenderSources(state);
         _record.Disabled = !state.InputAvailable || state.IsRecording;
         _stop.Disabled = !state.IsRecording;
         _save.Disabled = state.IsRecording || !state.HasRecording;
@@ -75,13 +82,15 @@ public partial class AudioConsoleView : Control
         _devices.Disabled = state.IsRecording || state.IsInputSuspended || _deviceList.Count == 0;
         _sourceMode.Disabled = state.IsRecording || state.IsInputSuspended;
         _refresh.Disabled = state.IsRecording || state.IsInputSuspended;
+        _addSource.Disabled = state.IsRecording || state.IsInputSuspended || _deviceList.Count == 0;
         var tenths = (long)(state.Elapsed.TotalSeconds * 10);
         _timer.Text = $"{tenths / 600:00}:{tenths / 10 % 60:00}.{tenths % 10}";
-        var computerOutput = _sourceKind == AudioSourceKind.ComputerOutput;
-        _signal.Text = state.IsInputSuspended ? (computerOutput ? "PC SOSPESO • RIASCOLTO" : "MIC SOSPESO • RIASCOLTO") : state.Signal switch
+        var computerOutput = state.Sources.Length == 1 && state.Sources[0].Device.Source == AudioSourceKind.ComputerOutput;
+        var multiple = state.Sources.Length > 1;
+        _signal.Text = state.IsInputSuspended ? (multiple ? "MIX SOSPESO • RIASCOLTO" : computerOutput ? "PC SOSPESO • RIASCOLTO" : "MIC SOSPESO • RIASCOLTO") : state.Signal switch
         {
             InputSignal.Clipping => "PICCO • RIDUCI VOLUME",
-            InputSignal.Live => state.IsRecording ? "REC • INGRESSO LIVE" : computerOutput ? "AUDIO PC • LIVE" : "INGRESSO LIVE",
+            InputSignal.Live => state.IsRecording ? "REC • MIX LIVE" : multiple ? "MIX • LIVE" : computerOutput ? "AUDIO PC • LIVE" : "INGRESSO LIVE",
             _ => state.IsRecording ? "REC • NESSUN SEGNALE" : "NESSUN SEGNALE"
         };
         _signal.TooltipText = state.IsInputSuspended ? "Cattura disattivata durante il riascolto e la pausa. Si riattiva a STOP o a fine file."
@@ -94,6 +103,67 @@ public partial class AudioConsoleView : Control
         if (state.PlaybackError != null && state.PlaybackError != _lastPlaybackError)
             _status.Text = "Ascolto interrotto: " + state.PlaybackError;
         _lastPlaybackError = state.PlaybackError;
+    }
+
+    private void RenderSources(ConsoleSnapshot state)
+    {
+        var identities = state.Sources.Select(source => source.Device.Identity).ToHashSet();
+        foreach (var identity in _strips.Keys.Where(identity => !identities.Contains(identity)).ToArray())
+        {
+            var strip = _strips[identity];
+            _sourceRows.RemoveChild(strip);
+            strip.QueueFree();
+            _strips.Remove(identity);
+        }
+        foreach (var source in state.Sources)
+        {
+            if (!_strips.TryGetValue(source.Device.Identity, out var strip))
+            {
+                strip = SourceStripScene.Instantiate<AudioSourceStripView>();
+                strip.GainRequested += (identity, value) =>
+                {
+                    try { _service!.SetSourceVolume(identity, value); }
+                    catch (Exception error) { _status.Text = error.Message; }
+                };
+                strip.RemoveRequested += RemoveSource;
+                _sourceRows.AddChild(strip);
+                _strips.Add(source.Device.Identity, strip);
+            }
+            strip.ShowSource(source, state.IsRecording || state.IsInputSuspended, state.IsInputSuspended);
+        }
+        _sourceSummary.Text = $"SORGENTI ATTIVE • {state.Sources.Length}   |   MIX STEREO 48 kHz";
+        _emptySources.Visible = state.Sources.Length == 0;
+    }
+
+    private void AddSource()
+    {
+        if (_service == null || _devices.Selected < 0 || _devices.Selected >= _deviceList.Count) return;
+        var device = _deviceList[_devices.Selected];
+        var sources = _service.GetSnapshot().Sources;
+        if (sources.Any(source => source.Device.Identity == device.Identity))
+        {
+            _status.Text = "Questa sorgente è già presente nel mix.";
+            return;
+        }
+        try
+        {
+            _service.ConfigureSources(sources.Select(source => new AudioSourceSettings(source.Device, source.VolumePercent))
+                .Append(new AudioSourceSettings(device)).ToArray());
+            _status.Text = "Sorgente aggiunta al mix: " + device.Name;
+        }
+        catch (Exception error) { ShowError(error); }
+    }
+
+    private void RemoveSource(string identity)
+    {
+        if (_service == null) return;
+        try
+        {
+            _service.ConfigureSources(_service.GetSnapshot().Sources.Where(source => source.Device.Identity != identity)
+                .Select(source => new AudioSourceSettings(source.Device, source.VolumePercent)).ToArray());
+            _status.Text = "Sorgente rimossa dal mix.";
+        }
+        catch (Exception error) { ShowError(error); }
     }
 
     private void RenderEditor(ConsoleSnapshot state)
@@ -263,7 +333,7 @@ public partial class AudioConsoleView : Control
                 return;
             }
             var selected = _deviceList.ToList().FindIndex(device => device.Id == _selectedDeviceId);
-            if (selected < 0 || !_service.GetSnapshot().InputAvailable) SelectDevice(Math.Max(0, selected));
+            if (selected < 0) SelectDevice(0);
             else _devices.Select(selected);
         }
         catch (Exception error) { ShowError(error); }
@@ -280,7 +350,6 @@ public partial class AudioConsoleView : Control
         }
         try
         {
-            _service.DisconnectInput();
             _sourceKind = (AudioSourceKind)index;
             _sourceMode.Select((int)index);
             _selectedDeviceId = null;
@@ -295,12 +364,9 @@ public partial class AudioConsoleView : Control
         try
         {
             var device = _deviceList[(int)index];
-            _service.SelectInput(device.Id);
             _selectedDeviceId = device.Id;
             _devices.Select((int)index);
-            _status.Text = _sourceKind == AudioSourceKind.ComputerOutput
-                ? "Audio del PC pronto. Avvia un suono sull'uscita selezionata e premi ●."
-                : "Pronto. Controlla il segnale e premi ●.";
+            _status.Text = "Premi + per aggiungere il dispositivo al mix.";
         }
         catch (Exception error) { ShowError(error); }
     }
@@ -377,6 +443,11 @@ public partial class AudioConsoleView : Control
         _devices = GetNode<OptionButton>("%SourceDeviceSelect");
         _sourceMode = GetNode<OptionButton>("%SourceMode");
         _sourceMode.ItemSelected += SelectSourceMode;
+        _sourceRows = GetNode<VBoxContainer>("%SourceRows");
+        _sourceSummary = GetNode<Label>("%SourceSummary");
+        _emptySources = GetNode<Label>("%EmptySources");
+        _addSource = GetNode<Button>("%AddSourceButton");
+        _addSource.Pressed += AddSource;
         _refresh = GetNode<Button>("%RefreshButton");
         _record = GetNode<Button>("%RecordButton");
         _stop = GetNode<Button>("%StopButton");

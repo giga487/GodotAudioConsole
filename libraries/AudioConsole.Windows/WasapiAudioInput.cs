@@ -17,6 +17,16 @@ public sealed class WasapiAudioInput : IAudioInput
     private WasapiOut? _silenceRenderer;
     private MMDevice? _silenceDevice;
     private bool _disposed;
+    private readonly AudioFormat? _targetFormat;
+
+    public WasapiAudioInput(AudioFormat? targetFormat = null)
+    {
+        targetFormat?.Validate();
+        _targetFormat = targetFormat;
+    }
+
+    public static IMultiSourceAudioInput CreateMixer()
+        => new MultiSourceAudioInput(() => new WasapiAudioInput(StereoMixer.Format));
 
     public event Action<ReadOnlyMemory<float>>? SamplesAvailable;
     public event Action<string>? Failed;
@@ -32,8 +42,14 @@ public sealed class WasapiAudioInput : IAudioInput
         {
             using (device) result.Add(new((loopback ? LoopbackPrefix : "") + device.ID, device.FriendlyName, source));
         }
-        if (result.Count > 0) result.Insert(0, new((loopback ? LoopbackPrefix : "") + DefaultDeviceId,
-            loopback ? "Uscita predefinita di sistema" : "Predefinito di sistema", source));
+        if (result.Count > 0)
+        {
+            using var defaultEndpoint = enumerator.GetDefaultAudioEndpoint(loopback ? DataFlow.Render : DataFlow.Capture,
+                loopback ? Role.Multimedia : Role.Console);
+            result.Insert(0, new((loopback ? LoopbackPrefix : "") + DefaultDeviceId,
+                loopback ? "Uscita predefinita di sistema" : "Predefinito di sistema", source,
+                (loopback ? LoopbackPrefix : "") + defaultEndpoint.ID));
+        }
         return result;
     }
 
@@ -52,7 +68,9 @@ public sealed class WasapiAudioInput : IAudioInput
             // Native mix format avoids imposing an unsupported sample rate on hardware.
             _capture = loopback ? new WasapiLoopbackCapture(_device)
                 : new WasapiCapture(_device, useEventSync: true, audioBufferMillisecondsLength: 30);
-            if (loopback)
+            if (_targetFormat is { } target)
+                _capture.WaveFormat = WaveFormat.CreateIeeeFloatWaveFormat(target.SampleRate, target.Channels);
+            else if (loopback)
                 // Shared-mode WASAPI performs stereo downmix, including 5.1/7.1 outputs.
                 _capture.WaveFormat = WaveFormat.CreateIeeeFloatWaveFormat(_capture.WaveFormat.SampleRate, 2);
             var format = _capture.WaveFormat;

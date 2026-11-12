@@ -1,7 +1,21 @@
 namespace AudioConsole.Core;
 
 public enum AudioSourceKind { Microphone, ComputerOutput }
-public sealed record AudioInputDevice(string Id, string Name, AudioSourceKind Source = AudioSourceKind.Microphone);
+public sealed record AudioInputDevice(string Id, string Name, AudioSourceKind Source = AudioSourceKind.Microphone,
+    string? CanonicalId = null)
+{
+    public string Identity => CanonicalId ?? Id;
+}
+
+public sealed record AudioSourceSettings(AudioInputDevice Device, double VolumePercent = 100);
+public sealed record AudioSourceState(AudioInputDevice Device, double VolumePercent, AudioLevels Levels, string? Error);
+
+public interface IMultiSourceAudioInput : IAudioInput
+{
+    void ConfigureSources(IReadOnlyList<AudioSourceSettings> sources);
+    void SetSourceVolume(string identity, double percent);
+    AudioSourceState[] GetSources();
+}
 
 /// <summary>Normalized, interleaved floating point audio. The backend owns its hardware.</summary>
 public readonly record struct AudioFormat(int SampleRate, int Channels)
@@ -64,4 +78,5 @@ public sealed record ConsoleSnapshot(
     bool IsPaused,
     string? PlaybackError,
     bool IsInputSuspended,
-    RecordingEditorSnapshot? Editor);
+    RecordingEditorSnapshot? Editor,
+    AudioSourceState[] Sources);

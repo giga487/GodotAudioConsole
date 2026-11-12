@@ -64,6 +64,25 @@ public sealed class AudioConsoleService : IDisposable
         _input.Stop();
     }
 
+    public void ConfigureSources(IReadOnlyList<AudioSourceSettings> sources)
+    {
+        if (_input is not IMultiSourceAudioInput multi) throw new NotSupportedException("Mixer non disponibile.");
+        _ = new StereoMixer(sources); // Validate before stopping the existing configuration.
+        DisconnectInput();
+        multi.ConfigureSources(sources);
+        if (sources.Count > 0) SelectInput(MultiSourceAudioInput.MixDeviceId);
+    }
+
+    public void SetSourceVolume(string identity, double percent)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_input is not IMultiSourceAudioInput multi) throw new NotSupportedException("Mixer non disponibile.");
+            multi.SetSourceVolume(identity, percent);
+        }
+    }
+
     public void SelectInput(string deviceId)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -321,7 +340,8 @@ public sealed class AudioConsoleService : IDisposable
             return new(_inputAvailable, _isRecording, selected != null || _pcm.Length > 0,
                 _pcm.Length > 0 || recordings.Any(recording => !recording.IsExported),
                 _volume, elapsed, signal, _inputError, history, recordings, _selectedRecordingId,
-                playing, _playback?.IsPaused == true, _playback?.Error, _inputSuspended, editor);
+                playing, _playback?.IsPaused == true, _playback?.Error, _inputSuspended, editor,
+                (_input as IMultiSourceAudioInput)?.GetSources() ?? []);
         }
     }
 

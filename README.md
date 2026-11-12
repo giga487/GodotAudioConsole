@@ -7,7 +7,7 @@ Il backend audio attuale usa WASAPI e richiede **Windows**.
 
 | Progetto | Responsabilità | Dipendenze |
 | --- | --- | --- |
-| `libraries/AudioConsole.Core` | Stato applicativo, guadagno, PCM, timeline, livelli, selezione e ritaglio, cronologia, ascolto ed esportazione WAV | Solo libreria standard .NET |
+| `libraries/AudioConsole.Core` | Mixer multisorgente, guadagni, buffer/clock, PCM, timeline, livelli, ritaglio, cronologia, ascolto ed esportazione WAV | Solo libreria standard .NET |
 | `libraries/AudioConsole.Windows` | Microfoni, cattura dell'uscita PC (loopback), riproduzione WASAPI, conversione campioni | Core e NAudio.Wasapi 2.2.1 |
 | `new-game-project` | Controlli, disegno, finestre, conferme e traduzione dei comandi utente | Core, Windows e Godot |
 | `tests/AudioConsole.Tests` | Test applicativi senza motore e prova hardware opzionale | Core e Windows |
@@ -19,6 +19,11 @@ microfoni, bus audio, guadagno, registrazione, riproduzione o codifica WAV.
 Il client chiama `Update()` sul thread dei comandi per gestire la fine della
 riproduzione e il ripristino dell'ingresso; `GetSnapshot()` legge lo stato senza
 aprire o chiudere dispositivi.
+L'app usa `MultiSourceAudioInput`: una factory crea un backend normalizzato per ogni
+dispositivo; `StereoMixer` somma i frame su un'unica timeline stereo a 48 kHz.
+`ConfigureSources()` aggiunge/rimuove sorgenti a riposo, `SetSourceVolume()` modifica
+il guadagno di una sorgente anche durante la registrazione. Gli identificativi
+canonici impediscono di aggiungere due volte lo stesso endpoint tramite un alias predefinito.
 
 Le DLL `AudioConsole.Core.dll` e `AudioConsole.Windows.dll` vengono compilate e
 copiate automaticamente insieme all'assembly Godot tramite `ProjectReference`.
@@ -36,12 +41,15 @@ L'interfaccia è definita in risorse Godot, visibili anche senza avviare il prog
   pannello verde, bordo, griglia e linea centrale.
 - `new-game-project/scenes/recording_editor.tscn`: timeline selezionabile, secondo
   timer, livelli L/R, campi di inizio/fine e pulsante di ritaglio.
+- `new-game-project/scenes/audio_source_strip.tscn`: riga riutilizzabile per una
+  sorgente attiva, con nome, livello, volume e rimozione.
 - `new-game-project/themes/console_theme.tres`: font, colori e stili dei pulsanti.
 
 Apri la scena principale nella vista 2D per modificarne i nodi e le proprietà
 nell'Inspector. I Container mantengono l'allineamento durante il ridimensionamento.
 `AudioConsoleView.cs` recupera i controlli tramite nomi univoci (`%RecordButton`,
-ecc.) e collega i segnali: non costruisce l'interfaccia a runtime. Mantieni questi
+ecc.) e collega i segnali. Le righe delle sorgenti istanziano la scena già disegnata
+`audio_source_strip.tscn`; layout e controlli restano risorse modificabili nell'editor. Mantieni questi
 nomi quando sposti i controlli nell'albero. `WaveformView.cs` disegna soltanto
 la traccia audio dinamica nel nodo `Trace` del display.
 
@@ -65,18 +73,24 @@ Il primo restore richiede NuGet per l'SDK Godot e NAudio.
 ## Utilizzo
 
 - Display verde con forma d'onda nera in tempo reale, anche prima di registrare.
-- Selettore **Sorgente**: **Microfono** oppure **Audio del PC**. Il menu accanto
-  mostra i microfoni o le uscite audio (altoparlanti, cuffie, monitor) della modalità
-  scelta. **Aggiorna** rilegge i dispositivi disponibili.
+- Selettore **Sorgente**: scegli **Microfono** oppure **Audio del PC**, poi un
+  dispositivo e premi **+**. Ripeti per aggiungere altri dispositivi al mix.
+  Cambiare questo filtro non sostituisce le sorgenti già attive. Il primo
+  microfono disponibile viene aggiunto automaticamente all'avvio.
+- **Sorgenti attive** mostra ogni ingresso con indicatore di livello e volume
+  0–200% indipendenti. **×** rimuove una sorgente a registrazione ferma;
+  con zero sorgenti il comando REC è disabilitato. I duplicati vengono rifiutati.
+  **Aggiorna** rilegge i dispositivi disponibili.
 - **Audio del PC** usa WASAPI loopback e registra il mix riprodotto sull'uscita
   selezionata, comprese le applicazioni che la utilizzano. Non occorrono Mix Stereo
   o cavi audio virtuali. Le uscite 5.1/7.1 vengono convertite in stereo da Windows.
   Se un'app riproduce su un'altra uscita, seleziona quella nel menu.
-- Volume 0–200% applicato nella libreria: 100% mantiene il livello originale,
-  0% registra silenzio; i picchi fuori scala vengono saturati nel PCM16.
+- **Volume mix** applica il guadagno finale dopo la somma delle sorgenti.
+  Riduci i volumi se compare PICCO: la somma non viene normalizzata automaticamente;
+  i campioni fuori scala vengono saturati nel PCM16.
 - Registra / Stop / Salva WAV, con tempo basato sui campioni effettivamente ricevuti.
-- WAV PCM a 16 bit: frequenza nativa e canali mono/stereo del microfono;
-  frequenza nativa e due canali per la cattura dell'uscita PC.
+- Un unico WAV PCM stereo a 16 bit / **48 kHz** con tutte le sorgenti simultanee.
+  Windows converte frequenza e canali di ogni dispositivo prima del mixer.
 - Lista sotto la console delle ultime **10 registrazioni**, con durata e stato
   **Temporanea / Salvata**. La più recente viene selezionata automaticamente.
 - **Tasto destro** su una voce: menu contestuale con Riproduci / Pausa / Riprendi,
@@ -88,9 +102,9 @@ Il primo restore richiede NuGet per l'SDK Godot e NAudio.
   Il doppio clic su una riga avvia l'ascolto anche prima di esportarla.
 - Registrazione con **● rosso** e arresto con **■**. I tooltip spiegano ogni icona;
   gli SVG sono risorse modificabili in `new-game-project/icons` e assegnate nella scena.
-- Durante il riascolto e la sua pausa, la cattura viene chiusa e il display live
-  mostra **MIC SOSPESO** oppure **PC SOSPESO**. A STOP, a fine file o se la
-  riproduzione fallisce, la stessa sorgente viene riattivata automaticamente:
+- Durante il riascolto e la sua pausa, tutte le catture vengono chiuse e il display
+  mostra **MIX SOSPESO** (o MIC/PC per una sola sorgente). A STOP, a fine file o se la
+  riproduzione fallisce, tutte le sorgenti vengono riattivate con gli stessi volumi:
   il loopback non registra la riproduzione della console stessa.
 - Il display della registrazione mostra la timeline completa, il cursore e un
   secondo tempo **posizione / durata**, oltre a due barre di livello L/R. La
@@ -129,10 +143,15 @@ forma d'onda. Il cambio di modalità e dispositivo è bloccato durante registraz
 e riascolto; cambiarli a riposo mantiene cronologia, ritagli e registrazioni esportate.
 Il backend mantiene attivo un flusso di silenzio sull'uscita acquisita, così anche
 le pause senza audio conservano la loro durata nel WAV. Non cambia il volume di Windows.
+Il mixer usa un buffer comune di 120 ms e mantiene un clock unico indipendente
+dal numero di sorgenti. All'avvio emette silenzio mentre riempie i buffer, senza
+accorciare la durata del file. Un errore di una sorgente ferma la registrazione e
+conserva quanto acquisito; rimuovi la sorgente segnalata per riprendere con le altre.
+Questa versione salva un mix unico, senza tracce separate per ciascuna sorgente.
 
 ## Verifica
 
-Test deterministici, senza Godot e senza aprire il microfono:
+Test applicativi, senza Godot e senza aprire dispositivi audio:
 
 ```powershell
 dotnet run --project tests/AudioConsole.Tests
@@ -144,6 +163,8 @@ esportazione dei singoli elementi, pulizia dei file temporanei, conservazione
 dei WAV esportati, sospensione/ripristino del microfono, posizione e livelli,
 selezione inversa, ritagli PCM esatti e originali invariati anche con lista piena,
 errori di scrittura e disconnessione dell'ingresso.
+Verificano anche somma stereo, guadagni separati, silenzio in mancanza di dati,
+alias duplicati, clock del mix, sospensione di tutte le sorgenti e ripristino dopo errori.
 Sono un eseguibile di test senza dipendenze da un framework di test esterno;
 restituiscono codice 0 quando tutti i controlli passano.
 
@@ -169,14 +190,21 @@ che il WAV contenga il segnale. Verifica anche stereo e sospensione/ripristino:
 dotnet run --project tests/AudioConsole.Tests -- --loopback-hardware
 ```
 
+Prova multisorgente reale: apre insieme microfono e uscita predefiniti, registra
+un mix a volume finale 0 e verifica WAV stereo 48 kHz, clock e ripristino delle catture:
+
+```powershell
+dotnet run --project tests/AudioConsole.Tests -- --mix-hardware
+```
+
 Test della UI C# (dopo la build, sostituire `godot` con l'eseguibile .NET):
 
 ```powershell
 godot --headless --path new-game-project res://tests/console_ui_smoke.tscn
 ```
 
-Usa ingresso e uscita sintetici e verifica modalità microfono/PC, assenza di uscite,
-conservazione della cronologia al cambio sorgente, ascolto e cattura sospesa,
+Usa ingressi e uscita sintetici e verifica aggiunta/rimozione di più sorgenti,
+volumi separati, duplicati, zero sorgenti e conservazione della cronologia, ascolto e catture sospese,
 timer e livelli separati, selezione trascinabile e generazione del ritaglio,
 salvataggio tramite DLL e conferma di uscita. Senza `--headless` verifica anche il rendering e salva
 `.godot/csharp-console-preview.png`. I file temporanei sono in `.artifacts`

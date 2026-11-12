@@ -17,7 +17,41 @@ void Throws<T>(Action action, string message) where T : Exception
 
 var output = Path.GetFullPath(Path.Combine(".artifacts", "tests"));
 Directory.CreateDirectory(output);
-if (args.Contains("--loopback-hardware"))
+if (args.Contains("--mix-hardware"))
+{
+    if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("WASAPI requires Windows.");
+    using var input = WasapiAudioInput.CreateMixer();
+    using var service = new AudioConsoleService(input, new WasapiAudioPlayback(), output);
+    var microphones = service.GetDevices();
+    var outputs = service.GetDevices(AudioSourceKind.ComputerOutput);
+    Check(microphones.Count > 0 && outputs.Count > 0, "Mix hardware test needs one microphone and one output.");
+    if (microphones.Count > 0 && outputs.Count > 0)
+    {
+        service.ConfigureSources([new(microphones[0]), new(outputs[0])]);
+        service.SetVolume(0); // Replay silence rather than captured room/PC audio.
+        await Task.Delay(300);
+        service.StartRecording();
+        service.SetSourceVolume(microphones[0].Identity, 50);
+        await Task.Delay(400);
+        service.StopRecording();
+        var state = service.GetSnapshot();
+        Check(state.InputError == null && state.Sources.Length == 2 && state.HasRecording,
+            "Microphone and PC must run concurrently: " + state.InputError);
+        Check(state.Elapsed.TotalSeconds is > 0.25 and < 0.65, "Two sources must share one recording clock.");
+        if (state.HasRecording)
+        {
+            var wav = File.ReadAllBytes(service.SaveWav(Path.Combine(output, "multi-source-hardware.wav")));
+            Check(BinaryPrimitives.ReadInt32LittleEndian(wav.AsSpan(24)) == 48000 && BinaryPrimitives.ReadInt16LittleEndian(wav.AsSpan(22)) == 2,
+                "Mixed hardware WAV must be stereo 48 kHz.");
+            service.PlaySelected();
+            Check(service.GetSnapshot().IsInputSuspended, "Playback suspends the whole native mixer.");
+            service.StopPlayback();
+            Check(service.GetSnapshot().InputAvailable && service.GetSnapshot().Sources.Length == 2,
+                "Stopping playback reopens all normalized native sources.");
+        }
+    }
+}
+else if (args.Contains("--loopback-hardware"))
 {
     if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("WASAPI requires Windows.");
     using var input = new WasapiAudioInput();
@@ -312,6 +346,60 @@ else
         Throws<InvalidOperationException>(() => editor.DisconnectInput(), "Source changes are blocked while recording.");
         editor.StopRecording();
     }
+    var mic = new AudioInputDevice("mic", "Microfono sintetico");
+    var pc = new AudioInputDevice("pc", "Audio PC sintetico", AudioSourceKind.ComputerOutput);
+    var engine = new StereoMixer([new(mic, 50), new(pc)]);
+    engine.Push(mic.Identity, new float[] { 0.2f, -0.2f, 0.4f, -0.4f });
+    engine.Push(pc.Identity, new float[] { 0.3f, 0.1f, 0.2f, 0.2f });
+    var mixed = engine.ReadFrames(2);
+    Check(mixed.Length == 4 && Math.Abs(mixed[0] - 0.4f) < 0.0001f && Math.Abs(mixed[1]) < 0.0001f,
+        "Inputs must be summed frame-by-frame with independent gains, never appended.");
+    Check(Math.Abs(mixed[2] - 0.4f) < 0.0001f && Math.Abs(mixed[3]) < 0.0001f, "Stereo channel ordering must be preserved.");
+    Check(engine.GetLevels("mic").Left > 0.19f && engine.GetLevels("pc").Left > 0.29f, "Each source has its own post-gain meter.");
+    Check(engine.ReadFrames(100).All(value => value == 0), "Missing source frames must become silence.");
+    engine.SetVolume("pc", 0);
+    engine.Push("pc", new float[] { 1, 1 });
+    Check(engine.ReadFrames(1).All(value => value == 0), "A muted source contributes no audio.");
+    Throws<ArgumentException>(() => new StereoMixer([new(mic), new(new("default", "Alias", CanonicalId: "mic"))]),
+        "Default-device aliases cannot double-count the same physical endpoint.");
+    var captures = new List<FakeInput>();
+    using (var multi = new MultiSourceAudioInput(() => { var capture = new FakeInput(); captures.Add(capture); return capture; }))
+    using (var mixSession = new AudioConsoleService(multi, new FakePlayback(), output))
+    {
+        mixSession.ConfigureSources([new(mic, 50), new(pc)]);
+        foreach (var capture in captures.Where(capture => capture.IsRunning))
+            capture.Push(Enumerable.Repeat(capture.LastDeviceId == "mic" ? 0.2f : 0.3f, 48000 * 2).ToArray());
+        await Task.Delay(150); // Let the common jitter buffer fill before comparing exact PCM values.
+        mixSession.StartRecording();
+        await Task.Delay(300);
+        mixSession.SetSourceVolume("pc", 0);
+        await Task.Delay(100);
+        mixSession.StopRecording();
+        var state = mixSession.GetSnapshot();
+        Check(state.Sources.Length == 2 && state.InputError == null && state.HasRecording, "Asynchronous sources produce one take.");
+        Check(state.Elapsed.TotalSeconds is > 0.15 and < 0.5, "Source count must not multiply recorded duration.");
+        var pcm = File.ReadAllBytes(mixSession.SaveWav(Path.Combine(output, "mixed.wav")));
+        Check(Math.Abs(BinaryPrimitives.ReadInt16LittleEndian(pcm.AsSpan(44)) - 13107) < 3,
+            "Exported PCM must include both independently scaled sources.");
+        Check(Math.Abs(BinaryPrimitives.ReadInt16LittleEndian(pcm.AsSpan(pcm.Length - 2)) - 3277) < 3,
+            "Source gain changes while recording must affect subsequent PCM.");
+        var mixedRetained = state.Recordings.Length;
+        mixSession.PlaySelected();
+        Check(captures.All(capture => !capture.IsRunning), "Playback closes every source.");
+        mixSession.StopPlayback();
+        Check(captures.Count(capture => capture.IsRunning) == 2 && mixSession.GetSnapshot().Sources.Single(source => source.Device.Id == "pc").VolumePercent == 0,
+            "Replay completion restores every source and its gain.");
+        mixSession.StartRecording();
+        Throws<InvalidOperationException>(() => mixSession.ConfigureSources([new(mic)]), "Recording locks the source configuration.");
+        await Task.Delay(50);
+        captures.First(capture => capture.IsRunning).Fail("device disconnected");
+        Check(!mixSession.GetSnapshot().IsRecording && !mixSession.GetSnapshot().InputAvailable, "A source failure stops a take instead of silently dropping a channel.");
+        mixSession.ConfigureSources([new(pc)]);
+        Check(mixSession.GetSnapshot().InputAvailable && mixSession.GetSnapshot().Sources.Length == 1, "Removing a failed source can restore capture.");
+        mixSession.ConfigureSources([]);
+        Check(!mixSession.GetSnapshot().InputAvailable && captures.All(capture => !capture.IsRunning) && mixSession.GetSnapshot().Recordings.Length >= mixedRetained,
+            "Removing all sources closes capture and preserves history.");
+    }
 }
 
 Console.WriteLine($"Audio console C# tests: {(failures == 0 ? "PASS" : "FAIL")} ({failures} failures)");
@@ -337,7 +425,7 @@ internal sealed class FakeInput : IAudioInput
     public void Stop() => IsRunning = false;
     public void Push(ReadOnlyMemory<float> samples) => SamplesAvailable?.Invoke(samples);
     public void Fail(string message) => Failed?.Invoke(message);
-    public void Dispose() { }
+    public void Dispose() => Stop();
 }
 
 internal sealed class FakePlayback : IAudioPlayback
