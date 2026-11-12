@@ -15,19 +15,19 @@ run/main_scene="res://scenes/audio_console.tscn"
 config/features=PackedStringArray("4.6", "C#", "GL Compatibility")
 config/icon="res://icon.svg"
 
-[dotnet]
-
-project/assembly_name="GodotAudioConsole"
-
 [display]
 
 window/size/viewport_width=840
 window/size/viewport_height=1000
 window/size/window_width_override=840
 window/size/window_height_override=1000
+window/stretch/mode="canvas_items"
 window/size/min_width=640
 window/size/min_height=480
-window/stretch/mode="canvas_items"
+
+[dotnet]
+
+project/assembly_name="GodotAudioConsole"
 
 [physics]
 
