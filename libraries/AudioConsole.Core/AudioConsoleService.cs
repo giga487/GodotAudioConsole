@@ -41,10 +41,27 @@ public sealed class AudioConsoleService : IDisposable
         _input.Failed += InputFailed;
     }
 
-    public IReadOnlyList<AudioInputDevice> GetDevices()
+    public IReadOnlyList<AudioInputDevice> GetDevices(AudioSourceKind source = AudioSourceKind.Microphone)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _input.GetDevices();
+        return _input.GetDevices(source);
+    }
+
+    public void DisconnectInput()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_isRecording || _inputSuspended) throw new InvalidOperationException("Ferma registrazione e riascolto prima di cambiare sorgente.");
+            _inputAvailable = false;
+            _selectedInputId = null;
+            _inputError = null;
+            _lastSignal = _lastClip = 0;
+            _waveIndex = _peakFrames = _channelIndex = 0;
+            _low = _high = 0;
+            Array.Clear(_waveform);
+        }
+        _input.Stop();
     }
 
     public void SelectInput(string deviceId)
@@ -53,7 +70,7 @@ public sealed class AudioConsoleService : IDisposable
         lock (_gate)
         {
             if (_isRecording) throw new InvalidOperationException("Stop recording before changing input.");
-            if (_inputSuspended) throw new InvalidOperationException("Ferma il riascolto prima di cambiare microfono.");
+            if (_inputSuspended) throw new InvalidOperationException("Ferma il riascolto prima di cambiare sorgente.");
             _inputAvailable = false;
         }
         // Never stop/join a capture thread while holding the callback's lock.
@@ -271,7 +288,7 @@ public sealed class AudioConsoleService : IDisposable
             catch (Exception error)
             {
                 _inputAvailable = false;
-                _inputError = "Impossibile riattivare il microfono: " + error.Message;
+                _inputError = "Impossibile riattivare la sorgente audio: " + error.Message;
             }
         }
     }

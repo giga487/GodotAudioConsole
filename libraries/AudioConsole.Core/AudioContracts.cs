@@ -1,6 +1,7 @@
 namespace AudioConsole.Core;
 
-public sealed record AudioInputDevice(string Id, string Name);
+public enum AudioSourceKind { Microphone, ComputerOutput }
+public sealed record AudioInputDevice(string Id, string Name, AudioSourceKind Source = AudioSourceKind.Microphone);
 
 /// <summary>Normalized, interleaved floating point audio. The backend owns its hardware.</summary>
 public readonly record struct AudioFormat(int SampleRate, int Channels)
@@ -16,7 +17,7 @@ public interface IAudioInput : IDisposable
 {
     event Action<ReadOnlyMemory<float>>? SamplesAvailable;
     event Action<string>? Failed;
-    IReadOnlyList<AudioInputDevice> GetDevices();
+    IReadOnlyList<AudioInputDevice> GetDevices(AudioSourceKind source = AudioSourceKind.Microphone);
     AudioFormat Start(string deviceId);
     void Stop();
 }

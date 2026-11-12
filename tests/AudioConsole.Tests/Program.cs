@@ -17,7 +17,55 @@ void Throws<T>(Action action, string message) where T : Exception
 
 var output = Path.GetFullPath(Path.Combine(".artifacts", "tests"));
 Directory.CreateDirectory(output);
-if (args.Contains("--playback-hardware"))
+if (args.Contains("--loopback-hardware"))
+{
+    if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("WASAPI requires Windows.");
+    using var input = new WasapiAudioInput();
+    using var service = new AudioConsoleService(input, new WasapiAudioPlayback(), output);
+    var devices = service.GetDevices(AudioSourceKind.ComputerOutput);
+    Check(devices.Count > 0 && devices.All(device => device.Source == AudioSourceKind.ComputerOutput), "Loopback enumerates output devices.");
+    if (devices.Count > 0)
+    {
+        Console.WriteLine($"WASAPI output sources: {devices.Count}");
+        service.SelectInput(devices[0].Id);
+        await Task.Delay(200);
+        service.StartRecording();
+        await Task.Delay(400); // No audio renderer other than the backend's silent keepalive.
+        service.StopRecording();
+        var quiet = service.GetSnapshot();
+        Check(quiet.InputError == null && quiet.HasRecording && quiet.Elapsed.TotalSeconds > 0.2,
+            "Loopback must retain time even while the output is silent: " + quiet.InputError);
+        if (quiet.HasRecording)
+        {
+            var wav = File.ReadAllBytes(service.SaveWav(Path.Combine(output, "loopback-silence.wav")));
+            Check(BinaryPrimitives.ReadInt16LittleEndian(wav.AsSpan(22)) == 2, "Surround outputs must be captured as stereo WAVs.");
+        }
+        using var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
+        using var endpoint = enumerator.GetDefaultAudioEndpoint(NAudio.CoreAudioApi.DataFlow.Render, NAudio.CoreAudioApi.Role.Multimedia);
+        using var tone = new NAudio.Wave.WasapiOut(endpoint, NAudio.CoreAudioApi.AudioClientShareMode.Shared, true, 100);
+        var signal = new NAudio.Wave.SampleProviders.SignalGenerator(48000, 2) { Gain = 0.02, Frequency = 440 };
+        tone.Init(new NAudio.Wave.SampleProviders.SampleToWaveProvider(signal));
+        service.StartRecording();
+        tone.Play();
+        await Task.Delay(500);
+        tone.Stop();
+        await Task.Delay(150);
+        service.StopRecording();
+        var recorded = service.GetSnapshot();
+        Check(recorded.HasRecording && recorded.InputError == null, "Loopback must capture rendered audio.");
+        if (recorded.HasRecording)
+        {
+            var wav = File.ReadAllBytes(service.SaveWav(Path.Combine(output, "loopback-tone.wav")));
+            Check(Peak(wav.AsSpan(44)) > 10, "Loopback PCM must contain the quiet test tone.");
+            service.PlaySelected();
+            Check(service.GetSnapshot().IsInputSuspended, "Replay suspends loopback to avoid self-capture.");
+            service.StopPlayback();
+            Check(!service.GetSnapshot().IsInputSuspended && service.GetSnapshot().InputAvailable,
+                "Stopping replay restores the same loopback source.");
+        }
+    }
+}
+else if (args.Contains("--playback-hardware"))
 {
     if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("WASAPI requires Windows.");
     using var playback = new WasapiAudioPlayback();
@@ -251,6 +299,18 @@ else
         editor.SelectRecording(originalId);
         editor.SaveWav(originalPath);
         Check(File.ReadAllBytes(originalPath).SequenceEqual(original), "Original WAV must remain byte-for-byte unchanged.");
+        var retainedCount = editor.GetSnapshot().Recordings.Length;
+        editor.DisconnectInput();
+        Check(!editor.GetSnapshot().InputAvailable && !editInput.IsRunning && editor.GetSnapshot().Recordings.Length == retainedCount,
+            "Changing source closes capture without losing history.");
+        var outputSource = editor.GetDevices(AudioSourceKind.ComputerOutput).Single();
+        editor.SelectInput(outputSource.Id);
+        editor.PlaySelected();
+        editor.StopPlayback();
+        Check(editInput.LastDeviceId == outputSource.Id, "Resume must reopen the selected output source, not the microphone.");
+        editor.StartRecording();
+        Throws<InvalidOperationException>(() => editor.DisconnectInput(), "Source changes are blocked while recording.");
+        editor.StopRecording();
     }
 }
 
@@ -268,10 +328,12 @@ static int Peak(ReadOnlySpan<byte> pcm)
 internal sealed class FakeInput : IAudioInput
 {
     public bool IsRunning { get; private set; }
+    public string? LastDeviceId { get; private set; }
     public event Action<ReadOnlyMemory<float>>? SamplesAvailable;
     public event Action<string>? Failed;
-    public IReadOnlyList<AudioInputDevice> GetDevices() => [new("fake", "Synthetic input")];
-    public AudioFormat Start(string deviceId) { IsRunning = true; return new(48000, 2); }
+    public IReadOnlyList<AudioInputDevice> GetDevices(AudioSourceKind source = AudioSourceKind.Microphone)
+        => [new(source == AudioSourceKind.ComputerOutput ? "fake-output" : "fake", "Synthetic input", source)];
+    public AudioFormat Start(string deviceId) { IsRunning = true; LastDeviceId = deviceId; return new(48000, 2); }
     public void Stop() => IsRunning = false;
     public void Push(ReadOnlyMemory<float> samples) => SamplesAvailable?.Invoke(samples);
     public void Fail(string message) => Failed?.Invoke(message);

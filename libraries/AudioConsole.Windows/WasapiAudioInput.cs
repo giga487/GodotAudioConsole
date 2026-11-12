@@ -11,23 +11,29 @@ namespace AudioConsole.Windows;
 public sealed class WasapiAudioInput : IAudioInput
 {
     public const string DefaultDeviceId = "default";
+    private const string LoopbackPrefix = "loopback:";
     private WasapiCapture? _capture;
     private MMDevice? _device;
+    private WasapiOut? _silenceRenderer;
+    private MMDevice? _silenceDevice;
     private bool _disposed;
 
     public event Action<ReadOnlyMemory<float>>? SamplesAvailable;
     public event Action<string>? Failed;
 
-    public IReadOnlyList<AudioInputDevice> GetDevices()
+    public IReadOnlyList<AudioInputDevice> GetDevices(AudioSourceKind source = AudioSourceKind.Microphone)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!Enum.IsDefined(source)) throw new ArgumentOutOfRangeException(nameof(source));
+        var loopback = source == AudioSourceKind.ComputerOutput;
         using var enumerator = new MMDeviceEnumerator();
         var result = new List<AudioInputDevice>();
-        foreach (var device in enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active))
+        foreach (var device in enumerator.EnumerateAudioEndPoints(loopback ? DataFlow.Render : DataFlow.Capture, DeviceState.Active))
         {
-            using (device) result.Add(new(device.ID, device.FriendlyName));
+            using (device) result.Add(new((loopback ? LoopbackPrefix : "") + device.ID, device.FriendlyName, source));
         }
-        if (result.Count > 0) result.Insert(0, new(DefaultDeviceId, "Predefinito di sistema"));
+        if (result.Count > 0) result.Insert(0, new((loopback ? LoopbackPrefix : "") + DefaultDeviceId,
+            loopback ? "Uscita predefinita di sistema" : "Predefinito di sistema", source));
         return result;
     }
 
@@ -37,17 +43,33 @@ public sealed class WasapiAudioInput : IAudioInput
         Stop();
         try
         {
+            var loopback = deviceId.StartsWith(LoopbackPrefix, StringComparison.Ordinal);
+            var endpointId = loopback ? deviceId[LoopbackPrefix.Length..] : deviceId;
             using var enumerator = new MMDeviceEnumerator();
-            _device = deviceId == DefaultDeviceId
-                ? enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Console)
-                : enumerator.GetDevice(deviceId);
+            _device = endpointId == DefaultDeviceId
+                ? enumerator.GetDefaultAudioEndpoint(loopback ? DataFlow.Render : DataFlow.Capture, loopback ? Role.Multimedia : Role.Console)
+                : enumerator.GetDevice(endpointId);
             // Native mix format avoids imposing an unsupported sample rate on hardware.
-            _capture = new WasapiCapture(_device, useEventSync: true, audioBufferMillisecondsLength: 30);
+            _capture = loopback ? new WasapiLoopbackCapture(_device)
+                : new WasapiCapture(_device, useEventSync: true, audioBufferMillisecondsLength: 30);
+            if (loopback)
+                // Shared-mode WASAPI performs stereo downmix, including 5.1/7.1 outputs.
+                _capture.WaveFormat = WaveFormat.CreateIeeeFloatWaveFormat(_capture.WaveFormat.SampleRate, 2);
             var format = _capture.WaveFormat;
             ValidateFormat(format);
             _capture.DataAvailable += OnDataAvailable;
             _capture.RecordingStopped += OnRecordingStopped;
             _capture.StartRecording();
+            if (loopback)
+            {
+                // Keep the output engine ticking through silence so gaps retain their duration.
+                // A distinct endpoint wrapper gives this renderer its own AudioClient.
+                _silenceDevice = enumerator.GetDevice(_device.ID);
+                _silenceRenderer = new WasapiOut(_silenceDevice, AudioClientShareMode.Shared, useEventSync: true, latency: 100);
+                _silenceRenderer.PlaybackStopped += OnSilenceStopped;
+                _silenceRenderer.Init(new SilenceProvider(format));
+                _silenceRenderer.Play();
+            }
             return new(format.SampleRate, format.Channels);
         }
         catch
@@ -62,7 +84,7 @@ public sealed class WasapiAudioInput : IAudioInput
         new AudioFormat(format.SampleRate, format.Channels).Validate();
         if (format.Encoding == WaveFormatEncoding.IeeeFloat && format.BitsPerSample == 32) return;
         if (format.Encoding == WaveFormatEncoding.Pcm && format.BitsPerSample is 16 or 24 or 32) return;
-        throw new NotSupportedException($"Formato microfono non supportato: {format}.");
+        throw new NotSupportedException($"Formato della sorgente audio non supportato: {format}.");
     }
 
     private void OnDataAvailable(object? sender, WaveInEventArgs args)
@@ -90,7 +112,12 @@ public sealed class WasapiAudioInput : IAudioInput
 
     private void OnRecordingStopped(object? sender, StoppedEventArgs args)
     {
-        Failed?.Invoke(args.Exception?.Message ?? "Acquisizione audio terminata. Premi Aggiorna per riconnettere il microfono.");
+        Failed?.Invoke(args.Exception?.Message ?? "Acquisizione audio terminata. Premi Aggiorna per riconnettere la sorgente.");
+    }
+
+    private void OnSilenceStopped(object? sender, StoppedEventArgs args)
+    {
+        if (sender == _silenceRenderer && args.Exception != null) Failed?.Invoke(args.Exception.Message);
     }
 
     public void Stop()
@@ -104,6 +131,15 @@ public sealed class WasapiAudioInput : IAudioInput
             // NAudio waits for the capture worker before releasing its audio client.
             capture.Dispose();
         }
+        var silence = _silenceRenderer;
+        _silenceRenderer = null;
+        if (silence != null)
+        {
+            silence.PlaybackStopped -= OnSilenceStopped;
+            silence.Dispose();
+        }
+        _silenceDevice?.Dispose();
+        _silenceDevice = null;
         _device?.Dispose();
         _device = null;
     }

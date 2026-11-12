@@ -24,6 +24,24 @@ public partial class ConsoleUiSmoke : Node
             await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
             Button Button(string name) => view.GetNode<Button>("%" + name);
             void Press(string name) => Button(name).EmitSignal(BaseButton.SignalName.Pressed);
+            var sourceMode = view.GetNode<OptionButton>("%SourceMode");
+            void SwitchSource(int index)
+            {
+                sourceMode.Select(index);
+                sourceMode.EmitSignal(OptionButton.SignalName.ItemSelected, (long)index);
+            }
+            Check(sourceMode.ItemCount == 2, "Recording modes must be authored in the scene.");
+            _input.NoOutputs = true;
+            SwitchSource(1);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(!_input.IsRunning && Button("RecordButton").Disabled, "Missing outputs must not leave the microphone recording under PC mode.");
+            _input.NoOutputs = false;
+            Press("RefreshButton");
+            Check(_input.LastDeviceId == "test-output", "PC mode refresh opens an output endpoint.");
+            SwitchSource(0);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             var list = view.GetNode<ItemList>("%RecordingList");
             var menu = view.GetNode<PopupMenu>("%HistoryContextMenu");
             void RightClick(int? index)
@@ -41,6 +59,9 @@ public partial class ConsoleUiSmoke : Node
             Press("RecordButton");
             await ToSignal(GetTree().CreateTimer(0.3), SceneTreeTimer.SignalName.Timeout);
             Check(Button("RecordButton").Disabled && !Button("StopButton").Disabled, "Recording button states.");
+            Check(sourceMode.Disabled, "Source switching is disabled while recording.");
+            SwitchSource(1);
+            Check(sourceMode.Selected == 0 && _input.LastDeviceId == "test", "A forced source-change signal cannot bypass the recording guard.");
             view.FindChildren("*", "HSlider", true, false).OfType<HSlider>().Single().Value = 50;
             await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
             Press("StopButton");
@@ -55,6 +76,7 @@ public partial class ConsoleUiSmoke : Node
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             Check(!Button("StopPlaybackButton").Disabled && Button("PlayButton").Icon.ResourcePath.EndsWith("pause.svg"), "Playing switches the button to PAUSE.");
             Check(!_input.IsRunning && view.GetNode<Label>("%SignalLabel").Text.Contains("MIC SOSPESO"), "Playback must suspend physical input and label it clearly.");
+            Check(sourceMode.Disabled, "Source switching is disabled during replay.");
             var editor = view.GetNode<Control>("%RecordingEditor");
             Check(editor.GetNode<Label>("Header/PlaybackTime").Text.StartsWith("00:00.1"), "Playback has its own advancing timer.");
             Check(editor.GetNode<ProgressBar>("TimelineRow/LeftMeterColumn/LeftMeter").Value > 0.1, "Playback meters must show recorded sample levels.");
@@ -134,6 +156,18 @@ public partial class ConsoleUiSmoke : Node
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             Check(list.ItemCount == 3 && list.GetItemText(0).Contains("Ritaglio"), "Generating selection adds a crop without replacing either original take.");
+            SwitchSource(1);
+            Check(_input.LastDeviceId == "test-output", "Switching to PC mode selects the output endpoint.");
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(list.ItemCount == 3, "Changing capture mode preserves recordings and clips.");
+            Press("PlayButton");
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(view.GetNode<Label>("%SignalLabel").Text.Contains("PC SOSPESO") && !_input.IsRunning,
+                "Loopback mode must be suspended while replaying a take.");
+            Press("StopPlaybackButton");
+            Check(_input.LastDeviceId == "test-output" && _input.IsRunning, "Stopping replay restores PC capture.");
             view.Notification((int)NotificationWMCloseRequest);
             Check(confirmation.Visible, "Closing with unsaved audio requires confirmation.");
             confirmation.Hide();
@@ -167,8 +201,12 @@ public partial class ConsoleUiSmoke : Node
         private long _sampleIndex;
         public event Action<ReadOnlyMemory<float>>? SamplesAvailable;
         public event Action<string>? Failed { add { } remove { } }
-        public IReadOnlyList<AudioInputDevice> GetDevices() => [new("test", "Microfono sintetico • test C#")];
-        public AudioFormat Start(string deviceId) { _running = true; return new(48000, 1); }
+        public bool NoOutputs { get; set; }
+        public string? LastDeviceId { get; private set; }
+        public IReadOnlyList<AudioInputDevice> GetDevices(AudioSourceKind source = AudioSourceKind.Microphone)
+            => source == AudioSourceKind.ComputerOutput ? NoOutputs ? [] : [new("test-output", "Uscita PC sintetica • test C#", source)]
+                : [new("test", "Microfono sintetico • test C#")];
+        public AudioFormat Start(string deviceId) { _running = true; LastDeviceId = deviceId; return new(48000, 1); }
         public void Stop() => _running = false;
         public void Dispose() => Stop();
         public void PushTone(double delta)

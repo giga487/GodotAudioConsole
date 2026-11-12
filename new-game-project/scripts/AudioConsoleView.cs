@@ -14,6 +14,8 @@ public partial class AudioConsoleView : Control
     private string? _selectedDeviceId;
     private WaveformView _waveform = null!;
     private OptionButton _devices = null!;
+    private OptionButton _sourceMode = null!;
+    private AudioSourceKind _sourceKind;
     private Button _refresh = null!, _record = null!, _stop = null!, _save = null!;
     private Button _play = null!, _stopPlayback = null!;
     private ItemList _historyList = null!;
@@ -71,18 +73,21 @@ public partial class AudioConsoleView : Control
         RenderHistory(state);
         if (_historyContextMenu.Visible) UpdateHistoryMenu(state);
         _devices.Disabled = state.IsRecording || state.IsInputSuspended || _deviceList.Count == 0;
+        _sourceMode.Disabled = state.IsRecording || state.IsInputSuspended;
         _refresh.Disabled = state.IsRecording || state.IsInputSuspended;
         var tenths = (long)(state.Elapsed.TotalSeconds * 10);
         _timer.Text = $"{tenths / 600:00}:{tenths / 10 % 60:00}.{tenths % 10}";
-        _signal.Text = state.IsInputSuspended ? "MIC SOSPESO • RIASCOLTO" : state.Signal switch
+        var computerOutput = _sourceKind == AudioSourceKind.ComputerOutput;
+        _signal.Text = state.IsInputSuspended ? (computerOutput ? "PC SOSPESO • RIASCOLTO" : "MIC SOSPESO • RIASCOLTO") : state.Signal switch
         {
             InputSignal.Clipping => "PICCO • RIDUCI VOLUME",
-            InputSignal.Live => state.IsRecording ? "REC • INGRESSO LIVE" : "INGRESSO LIVE",
+            InputSignal.Live => state.IsRecording ? "REC • INGRESSO LIVE" : computerOutput ? "AUDIO PC • LIVE" : "INGRESSO LIVE",
             _ => state.IsRecording ? "REC • NESSUN SEGNALE" : "NESSUN SEGNALE"
         };
-        _signal.TooltipText = state.IsInputSuspended ? "Microfono disattivato durante il riascolto e la pausa. Si riattiva a STOP o a fine file."
+        _signal.TooltipText = state.IsInputSuspended ? "Cattura disattivata durante il riascolto e la pausa. Si riattiva a STOP o a fine file."
             : state.Signal == InputSignal.Quiet
-            ? "Parla nel microfono. Controlla ingresso, volume e permessi microfono del sistema." : "";
+            ? computerOutput ? "Avvia un audio sul PC e controlla che utilizzi l'uscita selezionata."
+                : "Parla nel microfono. Controlla ingresso, volume e permessi microfono del sistema." : "";
         if (state.InputError != null && state.InputError != _lastInputError)
             _status.Text = "Ingresso audio interrotto: " + state.InputError;
         _lastInputError = state.InputError;
@@ -247,17 +252,39 @@ public partial class AudioConsoleView : Control
         if (_service == null) return;
         try
         {
-            _deviceList = _service.GetDevices();
+            _deviceList = _service.GetDevices(_sourceKind);
             _devices.Clear();
             foreach (var device in _deviceList) _devices.AddItem(device.Name);
             if (_deviceList.Count == 0)
             {
-                _status.Text = "Nessun microfono. Collega un ingresso e premi Aggiorna.";
+                _status.Text = _sourceKind == AudioSourceKind.ComputerOutput
+                    ? "Nessuna uscita audio. Collega un dispositivo e premi Aggiorna."
+                    : "Nessun microfono. Collega un ingresso e premi Aggiorna.";
                 return;
             }
             var selected = _deviceList.ToList().FindIndex(device => device.Id == _selectedDeviceId);
             if (selected < 0 || !_service.GetSnapshot().InputAvailable) SelectDevice(Math.Max(0, selected));
             else _devices.Select(selected);
+        }
+        catch (Exception error) { ShowError(error); }
+    }
+
+    private void SelectSourceMode(long index)
+    {
+        if (_service == null || index is < 0 or > 1) return;
+        var state = _service.GetSnapshot();
+        if (state.IsRecording || state.IsInputSuspended)
+        {
+            _sourceMode.Select((int)_sourceKind);
+            return;
+        }
+        try
+        {
+            _service.DisconnectInput();
+            _sourceKind = (AudioSourceKind)index;
+            _sourceMode.Select((int)index);
+            _selectedDeviceId = null;
+            RefreshDevices();
         }
         catch (Exception error) { ShowError(error); }
     }
@@ -271,7 +298,9 @@ public partial class AudioConsoleView : Control
             _service.SelectInput(device.Id);
             _selectedDeviceId = device.Id;
             _devices.Select((int)index);
-            _status.Text = "Pronto. Controlla il segnale e premi Registra.";
+            _status.Text = _sourceKind == AudioSourceKind.ComputerOutput
+                ? "Audio del PC pronto. Avvia un suono sull'uscita selezionata e premi ●."
+                : "Pronto. Controlla il segnale e premi ●.";
         }
         catch (Exception error) { ShowError(error); }
     }
@@ -287,7 +316,7 @@ public partial class AudioConsoleView : Control
                     _status.Text = "Registrazione in corso…";
                     break;
                 case RecordingStartResult.NoInput:
-                    _status.Text = "Seleziona un microfono disponibile e riprova.";
+                    _status.Text = "Seleziona una sorgente audio disponibile e riprova.";
                     break;
             }
         }
@@ -301,7 +330,7 @@ public partial class AudioConsoleView : Control
         catch (Exception error) { _status.Text = "Copia temporanea non riuscita: " + error.Message; return; }
         _status.Text = _service?.GetSnapshot().SelectedRecordingId is { } current && current != previous
             ? "Registrazione aggiunta alla lista. Premi ▶ o Salva WAV."
-            : "Nessun audio ricevuto. Controlla il microfono e riprova.";
+            : "Nessun audio ricevuto. Controlla la sorgente e riprova.";
     }
 
     private void OpenSaveDialog()
@@ -345,7 +374,9 @@ public partial class AudioConsoleView : Control
     private void BindControls()
     {
         _waveform = GetNode<WaveformView>("%WaveformDisplay/Trace");
-        _devices = GetNode<OptionButton>("%MicrophoneSelect");
+        _devices = GetNode<OptionButton>("%SourceDeviceSelect");
+        _sourceMode = GetNode<OptionButton>("%SourceMode");
+        _sourceMode.ItemSelected += SelectSourceMode;
         _refresh = GetNode<Button>("%RefreshButton");
         _record = GetNode<Button>("%RecordButton");
         _stop = GetNode<Button>("%StopButton");

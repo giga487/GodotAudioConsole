@@ -79,13 +79,26 @@ theme_override_constants/separation = 12
 
 [node name="MicrophoneLabel" type="Label" parent="Margin/Scroll/ConsoleLayout/MicrophoneRow"]
 layout_mode = 2
-text = "Microfono"
+text = "Sorgente"
 
-[node name="MicrophoneSelect" type="OptionButton" parent="Margin/Scroll/ConsoleLayout/MicrophoneRow"]
+[node name="SourceMode" type="OptionButton" parent="Margin/Scroll/ConsoleLayout/MicrophoneRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+text = "Microfono"
+clip_text = true
+item_count = 2
+selected = 0
+popup/item_0/text = "Microfono"
+popup/item_0/id = 0
+popup/item_1/text = "Audio del PC"
+popup/item_1/id = 1
+
+[node name="SourceDeviceSelect" type="OptionButton" parent="Margin/Scroll/ConsoleLayout/MicrophoneRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Seleziona microfono"
+text = "Seleziona dispositivo"
 clip_text = true
 
 [node name="RefreshButton" type="Button" parent="Margin/Scroll/ConsoleLayout/MicrophoneRow"]

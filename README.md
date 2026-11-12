@@ -8,7 +8,7 @@ Il backend audio attuale usa WASAPI e richiede **Windows**.
 | Progetto | Responsabilità | Dipendenze |
 | --- | --- | --- |
 | `libraries/AudioConsole.Core` | Stato applicativo, guadagno, PCM, timeline, livelli, selezione e ritaglio, cronologia, ascolto ed esportazione WAV | Solo libreria standard .NET |
-| `libraries/AudioConsole.Windows` | Microfoni, acquisizione e riproduzione WASAPI, conversione campioni | Core e NAudio.Wasapi 2.2.1 |
+| `libraries/AudioConsole.Windows` | Microfoni, cattura dell'uscita PC (loopback), riproduzione WASAPI, conversione campioni | Core e NAudio.Wasapi 2.2.1 |
 | `new-game-project` | Controlli, disegno, finestre, conferme e traduzione dei comandi utente | Core, Windows e Godot |
 | `tests/AudioConsole.Tests` | Test applicativi senza motore e prova hardware opzionale | Core e Windows |
 
@@ -65,11 +65,18 @@ Il primo restore richiede NuGet per l'SDK Godot e NAudio.
 ## Utilizzo
 
 - Display verde con forma d'onda nera in tempo reale, anche prima di registrare.
-- Selezione microfono e pulsante Aggiorna per rilevare gli ingressi disponibili.
+- Selettore **Sorgente**: **Microfono** oppure **Audio del PC**. Il menu accanto
+  mostra i microfoni o le uscite audio (altoparlanti, cuffie, monitor) della modalità
+  scelta. **Aggiorna** rilegge i dispositivi disponibili.
+- **Audio del PC** usa WASAPI loopback e registra il mix riprodotto sull'uscita
+  selezionata, comprese le applicazioni che la utilizzano. Non occorrono Mix Stereo
+  o cavi audio virtuali. Le uscite 5.1/7.1 vengono convertite in stereo da Windows.
+  Se un'app riproduce su un'altra uscita, seleziona quella nel menu.
 - Volume 0–200% applicato nella libreria: 100% mantiene il livello originale,
   0% registra silenzio; i picchi fuori scala vengono saturati nel PCM16.
 - Registra / Stop / Salva WAV, con tempo basato sui campioni effettivamente ricevuti.
-- WAV PCM a 16 bit, con frequenza e canali mono/stereo dell'ingresso.
+- WAV PCM a 16 bit: frequenza nativa e canali mono/stereo del microfono;
+  frequenza nativa e due canali per la cattura dell'uscita PC.
 - Lista sotto la console delle ultime **10 registrazioni**, con durata e stato
   **Temporanea / Salvata**. La più recente viene selezionata automaticamente.
 - **Tasto destro** su una voce: menu contestuale con Riproduci / Pausa / Riprendi,
@@ -81,9 +88,10 @@ Il primo restore richiede NuGet per l'SDK Godot e NAudio.
   Il doppio clic su una riga avvia l'ascolto anche prima di esportarla.
 - Registrazione con **● rosso** e arresto con **■**. I tooltip spiegano ogni icona;
   gli SVG sono risorse modificabili in `new-game-project/icons` e assegnate nella scena.
-- Durante il riascolto e la sua pausa, il microfono viene chiuso e il display
-  live mostra **MIC SOSPESO**. A STOP, a fine file o se la riproduzione fallisce,
-  l'ingresso selezionato viene riattivato automaticamente.
+- Durante il riascolto e la sua pausa, la cattura viene chiusa e il display live
+  mostra **MIC SOSPESO** oppure **PC SOSPESO**. A STOP, a fine file o se la
+  riproduzione fallisce, la stessa sorgente viene riattivata automaticamente:
+  il loopback non registra la riproduzione della console stessa.
 - Il display della registrazione mostra la timeline completa, il cursore e un
   secondo tempo **posizione / durata**, oltre a due barre di livello L/R. La
   posizione viene dal clock di uscita; pausa e ripresa non contano il tempo fermo.
@@ -116,6 +124,11 @@ campioni originali. Questa versione crea ritagli separati; non unisce ancora pi�
 Se compare **NESSUN SEGNALE**, parla nel microfono e controlla ingresso, volume
 e accesso al microfono per le app desktop nelle impostazioni Privacy di Windows.
 Dopo aver collegato/scollegato un ingresso, premi Aggiorna a registrazione ferma.
+In modalità Audio del PC, avvia un suono sull'uscita scelta per controllare la
+forma d'onda. Il cambio di modalità e dispositivo è bloccato durante registrazione
+e riascolto; cambiarli a riposo mantiene cronologia, ritagli e registrazioni esportate.
+Il backend mantiene attivo un flusso di silenzio sull'uscita acquisita, così anche
+le pause senza audio conservano la loro durata nel WAV. Non cambia il volume di Windows.
 
 ## Verifica
 
@@ -148,13 +161,22 @@ il WAV di silenzio generato dal test e verifica avvio e fine automatica:
 dotnet run --project tests/AudioConsole.Tests -- --playback-hardware
 ```
 
+Prova del loopback reale: enumera le uscite, verifica la cattura nel silenzio,
+riproduce brevemente un tono a basso volume sull'uscita predefinita e controlla
+che il WAV contenga il segnale. Verifica anche stereo e sospensione/ripristino:
+
+```powershell
+dotnet run --project tests/AudioConsole.Tests -- --loopback-hardware
+```
+
 Test della UI C# (dopo la build, sostituire `godot` con l'eseguibile .NET):
 
 ```powershell
 godot --headless --path new-game-project res://tests/console_ui_smoke.tscn
 ```
 
-Usa ingresso e uscita sintetici e verifica cronologia, ascolto, microfono sospeso,
+Usa ingresso e uscita sintetici e verifica modalità microfono/PC, assenza di uscite,
+conservazione della cronologia al cambio sorgente, ascolto e cattura sospesa,
 timer e livelli separati, selezione trascinabile e generazione del ritaglio,
 salvataggio tramite DLL e conferma di uscita. Senza `--headless` verifica anche il rendering e salva
 `.godot/csharp-console-preview.png`. I file temporanei sono in `.artifacts`
