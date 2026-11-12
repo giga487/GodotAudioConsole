@@ -15,6 +15,11 @@ public sealed class AudioConsoleService : IDisposable
     private readonly IAudioPlayback? _playback;
     private readonly RecordingStore _recordings;
     private Guid? _selectedRecordingId;
+    private string? _selectedInputId;
+    private bool _inputSuspended;
+    private PcmRecording? _selectedAudio;
+    private int _selectionStartFrame, _selectionEndFrame;
+    private TimeSpan _playhead;
     private readonly WaveformPeak[] _waveform = new WaveformPeak[480];
     private readonly MemoryStream _pcm = new();
     private AudioFormat _format;
@@ -48,6 +53,7 @@ public sealed class AudioConsoleService : IDisposable
         lock (_gate)
         {
             if (_isRecording) throw new InvalidOperationException("Stop recording before changing input.");
+            if (_inputSuspended) throw new InvalidOperationException("Ferma il riascolto prima di cambiare microfono.");
             _inputAvailable = false;
         }
         // Never stop/join a capture thread while holding the callback's lock.
@@ -60,6 +66,7 @@ public sealed class AudioConsoleService : IDisposable
                 _format = _input.Start(deviceId);
                 _format.Validate();
                 _inputAvailable = true;
+                _selectedInputId = deviceId;
                 _inputError = null;
                 _waveIndex = _peakFrames = _channelIndex = 0;
                 _low = _high = 0;
@@ -83,13 +90,13 @@ public sealed class AudioConsoleService : IDisposable
 
     public RecordingStartResult StartRecording()
     {
+        StopPlayback();
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_isRecording) return RecordingStartResult.AlreadyRecording;
             if (!_inputAvailable) return RecordingStartResult.NoInput;
             ArchivePendingLocked();
-            _playback?.Stop();
             _pcm.SetLength(0);
             _recordedFrames = 0;
             _recordedFormat = _format;
@@ -113,7 +120,7 @@ public sealed class AudioConsoleService : IDisposable
         if (_pcm.Length == 0) return;
         var duration = TimeSpan.FromSeconds((double)_recordedFrames / _recordedFormat.SampleRate);
         var entry = _recordings.Add(_recordedFormat, _pcm.GetBuffer().AsSpan(0, checked((int)_pcm.Length)), duration);
-        _selectedRecordingId = entry.Id;
+        SetSelectedLocked(entry.Id);
         _pcm.SetLength(0);
     }
 
@@ -136,8 +143,55 @@ public sealed class AudioConsoleService : IDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_isRecording) throw new InvalidOperationException("Ferma la registrazione prima di cambiare selezione.");
             if (_recordings.Find(id) == null) throw new ArgumentException("Registrazione non disponibile.", nameof(id));
-            _playback?.Stop();
-            _selectedRecordingId = id;
+        }
+        StopPlayback();
+        lock (_gate)
+        {
+            if (_selectedRecordingId != id) SetSelectedLocked(id);
+        }
+    }
+
+    private void SetSelectedLocked(Guid id)
+    {
+        var audio = PcmRecording.Read(_recordings.GetPath(id));
+        _selectedRecordingId = id;
+        _selectedAudio = audio;
+        _selectionStartFrame = _selectionEndFrame = 0;
+        _playhead = TimeSpan.Zero;
+    }
+
+    public void SetSelection(TimeSpan start, TimeSpan end)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_isRecording || _selectedAudio == null) throw new InvalidOperationException("Seleziona una registrazione ferma.");
+            if (start < TimeSpan.Zero || end < TimeSpan.Zero || start > _selectedAudio.Duration || end > _selectedAudio.Duration)
+                throw new ArgumentOutOfRangeException(nameof(start));
+            _selectionStartFrame = _selectedAudio.ToFrame(start < end ? start : end);
+            _selectionEndFrame = _selectedAudio.ToFrame(start < end ? end : start);
+        }
+    }
+
+    public RecordingInfo GenerateSelectedPart()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_isRecording || _selectedAudio == null || _selectionEndFrame <= _selectionStartFrame)
+                throw new InvalidOperationException("Seleziona un intervallo non vuoto della registrazione.");
+        }
+        StopPlayback();
+        lock (_gate)
+        {
+            var audio = _selectedAudio!;
+            var firstByte = _selectionStartFrame * audio.Format.Channels * 2;
+            var length = (_selectionEndFrame - _selectionStartFrame) * audio.Format.Channels * 2;
+            var duration = TimeSpan.FromSeconds((double)(_selectionEndFrame - _selectionStartFrame) / audio.Format.SampleRate);
+            var entry = _recordings.Add(audio.Format, audio.Data.AsSpan(firstByte, length), duration,
+                preserveId: _selectedRecordingId, label: "Ritaglio");
+            SetSelectedLocked(entry.Id);
+            return entry;
         }
     }
 
@@ -148,10 +202,22 @@ public sealed class AudioConsoleService : IDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_isRecording) throw new InvalidOperationException("Ferma la registrazione prima dell'ascolto.");
             if (_playback == null) throw new NotSupportedException("Riproduzione audio non disponibile.");
-            var id = _selectedRecordingId ?? throw new InvalidOperationException("Seleziona una registrazione.");
-            if (_playback.IsPaused) _playback.Resume();
-            else _playback.Play(_recordings.GetPath(id));
+            if (_selectedRecordingId == null) throw new InvalidOperationException("Seleziona una registrazione.");
+            _inputSuspended = true;
+            _lastSignal = _lastClip = 0;
+            Array.Clear(_waveform);
         }
+        // Stop can join the capture callback thread; it must run outside _gate.
+        _input.Stop();
+        try
+        {
+            lock (_gate)
+            {
+                if (_playback!.IsPaused) _playback.Resume();
+                else { _playhead = TimeSpan.Zero; _playback.Play(_recordings.GetPath(_selectedRecordingId!.Value)); }
+            }
+        }
+        catch { ResumeInput(); throw; }
     }
 
     public void PausePlayback()
@@ -169,6 +235,44 @@ public sealed class AudioConsoleService : IDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             _playback?.Stop();
+            _playhead = TimeSpan.Zero;
+        }
+        ResumeInput();
+    }
+
+    /// <summary>Call on the application's command thread to restore capture after natural playback completion.</summary>
+    public void Update()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_inputSuspended || _playback?.IsPlaying == true || _playback?.IsPaused == true) return;
+            _playhead = _playback?.Error == null ? _selectedAudio?.Duration ?? TimeSpan.Zero : _playhead;
+            _playback?.Stop();
+        }
+        ResumeInput();
+    }
+
+    private void ResumeInput()
+    {
+        lock (_gate)
+        {
+            if (_disposed || !_inputSuspended) return;
+            _inputSuspended = false;
+            if (!_inputAvailable || _selectedInputId == null) return;
+            try
+            {
+                _format = _input.Start(_selectedInputId);
+                _format.Validate();
+                _inputError = null;
+                _channelIndex = _peakFrames = 0;
+                _low = _high = 0;
+            }
+            catch (Exception error)
+            {
+                _inputAvailable = false;
+                _inputError = "Impossibile riattivare il microfono: " + error.Message;
+            }
         }
     }
 
@@ -189,10 +293,18 @@ public sealed class AudioConsoleService : IDisposable
                 ? TimeSpan.FromSeconds((double)_recordedFrames / _recordedFormat.SampleRate) : TimeSpan.Zero;
             var selected = _recordings.Find(_selectedRecordingId);
             if (!_isRecording && _pcm.Length == 0) elapsed = selected?.Duration ?? TimeSpan.Zero;
+            var playing = _playback?.IsPlaying == true;
+            if (playing || _playback?.IsPaused == true) _playhead = _playback!.Position;
+            RecordingEditorSnapshot? editor = null;
+            if (_selectedAudio != null && _selectedRecordingId.HasValue)
+                editor = new(_selectedRecordingId.Value, _selectedAudio.Duration, _playhead,
+                    TimeSpan.FromSeconds((double)_selectionStartFrame / _selectedAudio.Format.SampleRate),
+                    TimeSpan.FromSeconds((double)_selectionEndFrame / _selectedAudio.Format.SampleRate),
+                    (WaveformPeak[])_selectedAudio.Overview.Clone(), playing ? _selectedAudio.LevelsAt(_playhead) : default);
             return new(_inputAvailable, _isRecording, selected != null || _pcm.Length > 0,
                 _pcm.Length > 0 || recordings.Any(recording => !recording.IsExported),
                 _volume, elapsed, signal, _inputError, history, recordings, _selectedRecordingId,
-                _playback?.IsPlaying == true, _playback?.IsPaused == true, _playback?.Error);
+                playing, _playback?.IsPaused == true, _playback?.Error, _inputSuspended, editor);
         }
     }
 
@@ -200,7 +312,7 @@ public sealed class AudioConsoleService : IDisposable
     {
         lock (_gate)
         {
-            if (_disposed || !_inputAvailable) return;
+            if (_disposed || !_inputAvailable || _inputSuspended) return;
             var span = samples.Span;
             var gain = (float)(_volume / 100);
             var framesPerPeak = Math.Max(1, _format.SampleRate / 120);
@@ -235,7 +347,7 @@ public sealed class AudioConsoleService : IDisposable
     {
         lock (_gate)
         {
-            if (_disposed) return;
+            if (_disposed || _inputSuspended) return;
             _inputAvailable = _isRecording = false;
             _inputError = message;
             try { ArchivePendingLocked(); }

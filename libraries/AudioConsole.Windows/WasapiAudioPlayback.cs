@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using System.Runtime.InteropServices;
 using AudioConsole.Core;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
@@ -11,9 +12,27 @@ public sealed class WasapiAudioPlayback : IAudioPlayback
     private WasapiOut? _output;
     private WaveFileReader? _reader;
     private volatile string? _error;
+    private TimeSpan _duration, _pausedPosition, _clockOffset;
     public bool IsPlaying => _output?.PlaybackState == PlaybackState.Playing && _error == null;
     public bool IsPaused => _output?.PlaybackState == PlaybackState.Paused && _error == null;
     public string? Error => _error;
+    public TimeSpan Position => _output == null ? TimeSpan.Zero : IsPaused ? _pausedPosition
+        : IsPlaying ? TimeSpan.FromSeconds(Math.Clamp((RawPosition() - _clockOffset).TotalSeconds, 0, _duration.TotalSeconds))
+        : _error == null ? _duration : TimeSpan.Zero;
+
+    private TimeSpan RawPosition()
+    {
+        try
+        {
+            return _output == null ? TimeSpan.Zero
+                : TimeSpan.FromSeconds((double)_output.GetPosition() / _output.OutputWaveFormat.AverageBytesPerSecond);
+        }
+        catch (COMException error)
+        {
+            _error = error.Message;
+            return TimeSpan.Zero;
+        }
+    }
 
     public void Play(string wavPath)
     {
@@ -22,6 +41,8 @@ public sealed class WasapiAudioPlayback : IAudioPlayback
         try
         {
             _reader = new WaveFileReader(wavPath);
+            _duration = _reader.TotalTime;
+            _pausedPosition = _clockOffset = TimeSpan.Zero;
             _output = new WasapiOut(AudioClientShareMode.Shared, useEventSync: true, latency: 100);
             _output.PlaybackStopped += OnPlaybackStopped;
             _output.Init(_reader);
@@ -41,12 +62,17 @@ public sealed class WasapiAudioPlayback : IAudioPlayback
 
     public void Pause()
     {
-        if (IsPlaying) _output!.Pause();
+        if (!IsPlaying) return;
+        _pausedPosition = Position;
+        _output!.Pause();
     }
 
     public void Resume()
     {
-        if (IsPaused) _output!.Play();
+        if (!IsPaused) return;
+        _output!.Play();
+        // The device clock keeps advancing while its stream is paused.
+        _clockOffset = RawPosition() - _pausedPosition;
     }
 
     public void Stop()

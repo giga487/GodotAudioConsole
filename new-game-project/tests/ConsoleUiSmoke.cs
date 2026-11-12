@@ -5,6 +5,7 @@ using Godot;
 public partial class ConsoleUiSmoke : Node
 {
     private readonly SyntheticInput _input = new();
+    private readonly SyntheticPlayback _playback = new();
 
     public override void _Process(double delta) => _input.PushTone(delta);
 
@@ -18,7 +19,7 @@ public partial class ConsoleUiSmoke : Node
             Check(view.GetNode<Panel>("%WaveformDisplay").GetNode<Control>("CenterLine") != null,
                 "Display background and center line must exist without runtime drawing.");
             view.AudioInputOverride = _input;
-            view.AudioPlaybackOverride = new SyntheticPlayback();
+            view.AudioPlaybackOverride = _playback;
             AddChild(view);
             await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
             Button Button(string name) => view.GetNode<Button>("%" + name);
@@ -38,16 +39,23 @@ public partial class ConsoleUiSmoke : Node
             var list = view.GetNode<ItemList>("%RecordingList");
             Check(list.ItemCount == 1 && list.GetItemText(0).Contains("Temporanea"), "Stopped take must appear in history before export.");
             Press("PlayButton");
+            _playback.Position = TimeSpan.FromSeconds(0.1);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             Check(!Button("StopPlaybackButton").Disabled && Button("PlayButton").Icon.ResourcePath.EndsWith("pause.svg"), "Playing switches the button to PAUSE.");
+            Check(!_input.IsRunning && view.GetNode<Label>("%SignalLabel").Text.Contains("MIC SOSPESO"), "Playback must suspend physical input and label it clearly.");
+            var editor = view.GetNode<Control>("%RecordingEditor");
+            Check(editor.GetNode<Label>("Header/PlaybackTime").Text.StartsWith("00:00.1"), "Playback has its own advancing timer.");
+            Check(editor.GetNode<ProgressBar>("TimelineRow/LeftMeterColumn/LeftMeter").Value > 0.1, "Playback meters must show recorded sample levels.");
             Press("PlayButton");
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             Check(Button("PlayButton").Icon.ResourcePath.EndsWith("play.svg") && !Button("StopPlaybackButton").Disabled,
                 "Paused playback offers PLAY and STOP.");
+            Check(!_input.IsRunning, "Pausing playback must not reactivate the microphone.");
             Press("PlayButton");
             Press("StopPlaybackButton");
+            Check(_input.IsRunning, "STOP restores the microphone.");
             var dialog = view.GetChildren().OfType<FileDialog>().Single();
             var path = ProjectSettings.GlobalizePath("res://.godot/csharp-ui-test.wav");
             dialog.EmitSignal(FileDialog.SignalName.FileSelected, path);
@@ -59,8 +67,31 @@ public partial class ConsoleUiSmoke : Node
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             Check(list.ItemCount == 2, "A second take must preserve the previous one.");
             list.EmitSignal(ItemList.SignalName.ItemSelected, 1L);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             Press("PlayButton");
             Press("StopPlaybackButton");
+            var timeline = editor.GetNode<RecordingTimelineView>("TimelineRow/TimelinePanel/Timeline");
+            timeline._GuiInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = new(timeline.Size.X * 0.2f, 30) });
+            timeline._GuiInput(new InputEventMouseMotion { Position = new(timeline.Size.X * 0.7f, 30) });
+            timeline._GuiInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = new(timeline.Size.X * 0.7f, 30) });
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            var generate = editor.GetNode<Button>("SelectionRow/GenerateButton");
+            Check(!generate.Disabled && editor.GetNode<SpinBox>("SelectionRow/EndTime").Value > 0,
+                "Dragging selects an interval and enables crop generation.");
+            var startControl = editor.GetNode<SpinBox>("SelectionRow/StartTime");
+            Check(Math.Abs(startControl.Value - startControl.MaxValue * 0.2) < 0.001,
+                "Dragging must use the selected recording's duration.");
+            if (DisplayServer.GetName() != "headless")
+            {
+                await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+                GetViewport().GetTexture().GetImage().SavePng("res://.godot/selection-preview.png");
+            }
+            generate.EmitSignal(BaseButton.SignalName.Pressed);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(list.ItemCount == 3 && list.GetItemText(0).Contains("Ritaglio"), "Generating selection adds a crop without replacing either original take.");
             view.Notification((int)NotificationWMCloseRequest);
             Check(confirmation.Visible, "Closing with unsaved audio requires confirmation.");
             confirmation.Hide();
@@ -90,6 +121,7 @@ public partial class ConsoleUiSmoke : Node
     private sealed class SyntheticInput : IAudioInput
     {
         private bool _running;
+        public bool IsRunning => _running;
         private long _sampleIndex;
         public event Action<ReadOnlyMemory<float>>? SamplesAvailable;
         public event Action<string>? Failed { add { } remove { } }
@@ -111,6 +143,7 @@ public partial class ConsoleUiSmoke : Node
     {
         public bool IsPlaying { get; private set; }
         public bool IsPaused { get; private set; }
+        public TimeSpan Position { get; set; }
         public string? Error => null;
         public void Play(string wavPath)
         {

@@ -24,11 +24,15 @@ if (args.Contains("--playback-hardware"))
     playback.Play(Path.Combine(output, "silent.wav"));
     Check(playback.IsPlaying, "WASAPI playback must start.");
     await Task.Delay(200);
+    Check(playback.Position.TotalSeconds > 0 && playback.Position.TotalSeconds < 1, "Hardware playback position advances with the output clock.");
     playback.Pause();
     Check(playback.IsPaused && !playback.IsPlaying, "WASAPI must enter paused state.");
+    var pausedPosition = playback.Position;
     await Task.Delay(200);
+    Check(playback.Position == pausedPosition, "Playback position remains fixed while paused.");
     playback.Resume();
     Check(playback.IsPlaying && !playback.IsPaused, "WASAPI must resume the same stream.");
+    Check(Math.Abs((playback.Position - pausedPosition).TotalSeconds) < 0.1, "Resume must not count the paused device-clock interval.");
     await Task.Delay(1800);
     Check(playback.Error == null, "WASAPI playback must not fail: " + playback.Error);
     Check(!playback.IsPlaying, "Playback must finish automatically at end of file.");
@@ -37,13 +41,14 @@ if (args.Contains("--playback-hardware"))
 else if (args.Contains("--hardware"))
 {
     if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("WASAPI requires Windows.");
-    using var service = new AudioConsoleService(new WasapiAudioInput());
+    using var service = new AudioConsoleService(new WasapiAudioInput(), new WasapiAudioPlayback());
     var devices = service.GetDevices();
     Check(devices.Count > 0, "At least one microphone must be available for hardware smoke test.");
     if (devices.Count > 0)
     {
         Console.WriteLine($"WASAPI inputs: {devices.Count}");
         service.SelectInput(devices[0].Id);
+        service.SetVolume(0); // The hardware round-trip test replays silence, not room audio.
         Check(service.StartRecording() == RecordingStartResult.Started, "Hardware recording must start.");
         await Task.Delay(500);
         service.StopRecording();
@@ -51,6 +56,16 @@ else if (args.Contains("--hardware"))
         Check(state.InputError == null, "WASAPI capture must not fail: " + state.InputError);
         Check(state.HasRecording && state.Elapsed.TotalSeconds > 0.1, "Hardware must deliver audio frames.");
         if (state.HasRecording) Console.WriteLine("Hardware WAV: " + service.SaveWav(Path.Combine(output, "hardware.wav")));
+        if (state.HasRecording)
+        {
+            service.PlaySelected();
+            Check(service.GetSnapshot().IsInputSuspended, "Real capture must be stopped during WASAPI playback.");
+            await Task.Delay(900);
+            service.Update();
+            var restored = service.GetSnapshot();
+            Check(!restored.IsInputSuspended && restored.InputAvailable && restored.InputError == null,
+                "Real capture must reopen after natural playback completion.");
+        }
     }
 }
 else
@@ -154,12 +169,21 @@ else
         history.PlaySelected();
         firstTemporary = historyPlayback.Path;
         Check(File.Exists(firstTemporary) && history.GetSnapshot().IsPlaying, "Unsaved take must play from a real temporary WAV.");
+        Check(!historyInput.IsRunning && history.GetSnapshot().IsInputSuspended, "Playback must close microphone capture.");
+        historyInput.Push(samples); // Simulates a late callback already queued before Stop.
+        Check(history.GetSnapshot().Waveform.All(peak => peak == default), "Suspended microphone callbacks must not update the live waveform.");
+        historyPlayback.Position = TimeSpan.FromSeconds(0.25);
+        var editorState = history.GetSnapshot().Editor!;
+        Check(editorState.Position == TimeSpan.FromSeconds(0.25) && editorState.Levels.Left > 0.2f,
+            "Playback clock and meters must come from the selected recording.");
         history.PausePlayback();
         Check(history.GetSnapshot().IsPaused && !history.GetSnapshot().IsPlaying, "Pause preserves the active playback session.");
+        Check(!historyInput.IsRunning, "Microphone must remain closed during playback pause.");
         history.PlaySelected();
         Check(history.GetSnapshot().IsPlaying && historyPlayback.PlayCalls == 1, "Play after pause resumes without opening the WAV again.");
         history.StopPlayback();
         Check(!history.GetSnapshot().IsPlaying, "Stop playback must update state.");
+        Check(historyInput.IsRunning && !history.GetSnapshot().IsInputSuspended, "Stop must restore microphone capture.");
         history.SaveWav(preservedExport);
         var firstId = history.GetSnapshot().SelectedRecordingId;
         for (var i = 0; i < 10; i++)
@@ -177,7 +201,10 @@ else
         history.PlaySelected();
         Check(history.GetSnapshot().SelectedRecordingId == older.Id && historyPlayback.IsPlaying, "Any older take can be selected and played.");
         historyPlayback.Complete();
+        history.Update();
         Check(!history.GetSnapshot().IsPlaying, "Natural playback completion is visible in snapshots.");
+        Check(historyInput.IsRunning && history.GetSnapshot().Editor!.Position == older.Duration,
+            "Natural completion must restore capture and leave the playhead at the end.");
         var olderPath = history.SaveWav(Path.Combine(output, "older.wav"));
         Check(File.Exists(olderPath) && history.GetSnapshot().Recordings.Single(entry => entry.Id == older.Id).IsExported,
             "Export updates only the selected history entry.");
@@ -190,6 +217,41 @@ else
     }
     Check(Directory.GetFiles(historyRoot, "*.wav", SearchOption.AllDirectories).Length == 0 && File.Exists(preservedExport),
         "Closing the session cleans temporary history and preserves exports.");
+
+    var editInput = new FakeInput();
+    using (var editor = new AudioConsoleService(editInput, new FakePlayback(), output))
+    {
+        editor.SelectInput("fake");
+        editor.StartRecording();
+        editInput.Push(samples);
+        editor.StopRecording();
+        var originalId = editor.GetSnapshot().SelectedRecordingId!.Value;
+        var originalPath = editor.SaveWav(Path.Combine(output, "edit-original.wav"));
+        var original = File.ReadAllBytes(originalPath);
+        Check(editor.GetSnapshot().Editor!.Waveform.Any(peak => peak.Low < -0.2f && peak.High > 0.2f), "Editor waveform represents original PCM.");
+        Throws<InvalidOperationException>(() => editor.GenerateSelectedPart(), "Empty selection must not create a take.");
+        Throws<ArgumentOutOfRangeException>(() => editor.SetSelection(TimeSpan.Zero, TimeSpan.FromSeconds(2)), "Selection cannot exceed duration.");
+        editor.SetSelection(TimeSpan.FromSeconds(0.6), TimeSpan.FromSeconds(0.2)); // Dragging right to left is supported.
+        var part = editor.GenerateSelectedPart();
+        Check(part.Duration == TimeSpan.FromSeconds(0.4) && editor.GetSnapshot().Recordings.Length == 2, "Selection creates a separate take with the exact duration.");
+        var cropped = File.ReadAllBytes(editor.SaveWav(Path.Combine(output, "crop.wav")));
+        Check(cropped.AsSpan(44).SequenceEqual(original.AsSpan(44 + 9600 * 4, 19200 * 4)), "Crop must preserve exact stereo PCM frames without re-encoding changes.");
+        Check(editor.GetSnapshot().Recordings.Any(item => item.Id == originalId), "Generating a crop retains the original.");
+        for (var i = 0; i < 8; i++)
+        {
+            editor.StartRecording();
+            editInput.Push(samples.AsMemory(0, 960));
+            editor.StopRecording();
+        }
+        editor.SelectRecording(originalId); // Original is now the oldest of ten entries.
+        editor.SetSelection(TimeSpan.Zero, TimeSpan.FromSeconds(0.1));
+        editor.GenerateSelectedPart();
+        Check(editor.GetSnapshot().Recordings.Length == 10 && editor.GetSnapshot().Recordings.Any(item => item.Id == originalId),
+            "At capacity, generating a crop must protect its source and retain ten items.");
+        editor.SelectRecording(originalId);
+        editor.SaveWav(originalPath);
+        Check(File.ReadAllBytes(originalPath).SequenceEqual(original), "Original WAV must remain byte-for-byte unchanged.");
+    }
 }
 
 Console.WriteLine($"Audio console C# tests: {(failures == 0 ? "PASS" : "FAIL")} ({failures} failures)");
@@ -205,11 +267,12 @@ static int Peak(ReadOnlySpan<byte> pcm)
 
 internal sealed class FakeInput : IAudioInput
 {
+    public bool IsRunning { get; private set; }
     public event Action<ReadOnlyMemory<float>>? SamplesAvailable;
     public event Action<string>? Failed;
     public IReadOnlyList<AudioInputDevice> GetDevices() => [new("fake", "Synthetic input")];
-    public AudioFormat Start(string deviceId) => new(48000, 2);
-    public void Stop() { }
+    public AudioFormat Start(string deviceId) { IsRunning = true; return new(48000, 2); }
+    public void Stop() => IsRunning = false;
     public void Push(ReadOnlyMemory<float> samples) => SamplesAvailable?.Invoke(samples);
     public void Fail(string message) => Failed?.Invoke(message);
     public void Dispose() { }
@@ -220,6 +283,7 @@ internal sealed class FakePlayback : IAudioPlayback
     public bool IsPlaying { get; private set; }
     public bool IsPaused { get; private set; }
     public int PlayCalls { get; private set; }
+    public TimeSpan Position { get; set; }
     public string? Error => null;
     public string? Path { get; private set; }
     public void Play(string wavPath)
@@ -227,6 +291,7 @@ internal sealed class FakePlayback : IAudioPlayback
         if (!File.Exists(wavPath)) throw new FileNotFoundException("Missing temporary recording.", wavPath);
         Path = wavPath;
         PlayCalls++;
+        Position = TimeSpan.Zero;
         IsPaused = false;
         IsPlaying = true;
     }

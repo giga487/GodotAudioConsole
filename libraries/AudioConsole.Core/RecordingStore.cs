@@ -19,7 +19,7 @@ internal sealed class RecordingStore : IDisposable
     public string GetPath(Guid id) => _entries.Find(entry => entry.Info.Id == id)?.Path
         ?? throw new ArgumentException("Registrazione non disponibile.", nameof(id));
 
-    public RecordingInfo Add(AudioFormat format, ReadOnlySpan<byte> pcm, TimeSpan duration)
+    public RecordingInfo Add(AudioFormat format, ReadOnlySpan<byte> pcm, TimeSpan duration, Guid? preserveId = null, string? label = null)
     {
         Directory.CreateDirectory(_directory);
         var id = Guid.NewGuid();
@@ -30,8 +30,9 @@ internal sealed class RecordingStore : IDisposable
                 WavWriter.Write(stream, format, pcm);
             if (_entries.Count == Capacity)
             {
-                File.Delete(_entries[^1].Path);
-                _entries.RemoveAt(_entries.Count - 1);
+                var oldest = _entries.FindLastIndex(entry => entry.Info.Id != preserveId);
+                File.Delete(_entries[oldest].Path);
+                _entries.RemoveAt(oldest);
             }
         }
         catch
@@ -39,7 +40,7 @@ internal sealed class RecordingStore : IDisposable
             if (File.Exists(path)) File.Delete(path);
             throw;
         }
-        var info = new RecordingInfo(id, $"Registrazione {++_sequence:000}", DateTimeOffset.Now, duration, null);
+        var info = new RecordingInfo(id, $"{label ?? "Registrazione"} {++_sequence:000}", DateTimeOffset.Now, duration, null);
         _entries.Insert(0, new(info, path));
         return info;
     }

@@ -1,0 +1,135 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/RecordingTimelineView.cs" id="1_timeline"]
+
+[sub_resource type="StyleBoxFlat" id="Panel"]
+bg_color = Color(0.12, 0.12, 0.12, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.36, 0.36, 0.36, 1)
+
+[sub_resource type="StyleBoxFlat" id="MeterBackground"]
+bg_color = Color(0.12, 0.12, 0.12, 1)
+
+[sub_resource type="StyleBoxFlat" id="MeterFill"]
+bg_color = Color(0.6, 0.75, 0.48, 1)
+
+[node name="RecordingEditor" type="VBoxContainer"]
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 15
+text = "REGISTRAZIONE / SELEZIONE"
+
+[node name="PlaybackTime" type="Label" parent="Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "00:00.0 / 00:00.0"
+tooltip_text = "Posizione di riproduzione / durata della registrazione"
+
+[node name="TimelineRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="TimelinePanel" type="Panel" parent="TimelineRow"]
+custom_minimum_size = Vector2(0, 144)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("Panel")
+
+[node name="Timeline" type="Control" parent="TimelineRow/TimelinePanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = 4.0
+offset_right = -8.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_default_cursor_shape = 3
+tooltip_text = "Trascina per selezionare un intervallo da ritagliare."
+script = ExtResource("1_timeline")
+
+[node name="LeftMeterColumn" type="VBoxContainer" parent="TimelineRow"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="TimelineRow/LeftMeterColumn"]
+layout_mode = 2
+text = "L"
+horizontal_alignment = 1
+
+[node name="LeftMeter" type="ProgressBar" parent="TimelineRow/LeftMeterColumn"]
+custom_minimum_size = Vector2(14, 0)
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/background = SubResource("MeterBackground")
+theme_override_styles/fill = SubResource("MeterFill")
+max_value = 1.0
+step = 0.001
+fill_mode = 3
+show_percentage = false
+
+[node name="RightMeterColumn" type="VBoxContainer" parent="TimelineRow"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="TimelineRow/RightMeterColumn"]
+layout_mode = 2
+text = "R"
+horizontal_alignment = 1
+
+[node name="RightMeter" type="ProgressBar" parent="TimelineRow/RightMeterColumn"]
+custom_minimum_size = Vector2(14, 0)
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/background = SubResource("MeterBackground")
+theme_override_styles/fill = SubResource("MeterFill")
+max_value = 1.0
+step = 0.001
+fill_mode = 3
+show_percentage = false
+
+[node name="SelectionRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="StartLabel" type="Label" parent="SelectionRow"]
+layout_mode = 2
+text = "Da"
+
+[node name="StartTime" type="SpinBox" parent="SelectionRow"]
+layout_mode = 2
+step = 0.001
+suffix = "s"
+editable = false
+
+[node name="EndLabel" type="Label" parent="SelectionRow"]
+layout_mode = 2
+text = "a"
+
+[node name="EndTime" type="SpinBox" parent="SelectionRow"]
+layout_mode = 2
+step = 0.001
+suffix = "s"
+editable = false
+
+[node name="GenerateButton" type="Button" parent="SelectionRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+disabled = true
+text = "Genera parte selezionata"
+tooltip_text = "Crea un nuovo ritaglio nella lista, lasciando intatto l'originale."
+
+[node name="Hint" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+text = "Trascina sulla timeline o inserisci inizio e fine in secondi. L'originale resta intatto."
+autowrap_mode = 3

@@ -25,6 +25,12 @@ public partial class AudioConsoleView : Control
     private string? _lastInputError;
     private string? _lastPlaybackError;
     private Guid? _saveTarget;
+    private RecordingTimelineView _timeline = null!;
+    private SpinBox _selectionStart = null!, _selectionEnd = null!;
+    private Button _generatePart = null!;
+    private Label _playbackTime = null!;
+    private ProgressBar _leftMeter = null!, _rightMeter = null!;
+    private bool _syncingEditor;
 
     public override void _Ready()
     {
@@ -48,8 +54,10 @@ public partial class AudioConsoleView : Control
     public override void _Process(double delta)
     {
         if (_service == null) return;
+        _service.Update();
         var state = _service.GetSnapshot();
         _waveform.ShowHistory(state.Waveform);
+        RenderEditor(state);
         _record.Disabled = !state.InputAvailable || state.IsRecording;
         _stop.Disabled = !state.IsRecording;
         _save.Disabled = state.IsRecording || !state.HasRecording;
@@ -58,17 +66,18 @@ public partial class AudioConsoleView : Control
         _play.TooltipText = state.IsPlaying ? "Pausa riproduzione" : state.IsPaused ? "Riprendi riproduzione" : "Riproduci registrazione selezionata";
         _stopPlayback.Disabled = !state.IsPlaying && !state.IsPaused;
         RenderHistory(state);
-        _devices.Disabled = state.IsRecording || _deviceList.Count == 0;
-        _refresh.Disabled = state.IsRecording;
+        _devices.Disabled = state.IsRecording || state.IsInputSuspended || _deviceList.Count == 0;
+        _refresh.Disabled = state.IsRecording || state.IsInputSuspended;
         var tenths = (long)(state.Elapsed.TotalSeconds * 10);
         _timer.Text = $"{tenths / 600:00}:{tenths / 10 % 60:00}.{tenths % 10}";
-        _signal.Text = state.Signal switch
+        _signal.Text = state.IsInputSuspended ? "MIC SOSPESO • RIASCOLTO" : state.Signal switch
         {
             InputSignal.Clipping => "PICCO • RIDUCI VOLUME",
             InputSignal.Live => state.IsRecording ? "REC • INGRESSO LIVE" : "INGRESSO LIVE",
             _ => state.IsRecording ? "REC • NESSUN SEGNALE" : "NESSUN SEGNALE"
         };
-        _signal.TooltipText = state.Signal == InputSignal.Quiet
+        _signal.TooltipText = state.IsInputSuspended ? "Microfono disattivato durante il riascolto e la pausa. Si riattiva a STOP o a fine file."
+            : state.Signal == InputSignal.Quiet
             ? "Parla nel microfono. Controlla ingresso, volume e permessi microfono del sistema." : "";
         if (state.InputError != null && state.InputError != _lastInputError)
             _status.Text = "Ingresso audio interrotto: " + state.InputError;
@@ -76,6 +85,33 @@ public partial class AudioConsoleView : Control
         if (state.PlaybackError != null && state.PlaybackError != _lastPlaybackError)
             _status.Text = "Ascolto interrotto: " + state.PlaybackError;
         _lastPlaybackError = state.PlaybackError;
+    }
+
+    private void RenderEditor(ConsoleSnapshot state)
+    {
+        var editor = state.Editor;
+        _timeline.InteractionEnabled = !state.IsRecording;
+        _timeline.ShowRecording(editor);
+        _playbackTime.Text = $"{FormatDuration(editor?.Position ?? TimeSpan.Zero)} / {FormatDuration(editor?.Duration ?? TimeSpan.Zero)}";
+        _leftMeter.Value = editor?.Levels.Left ?? 0;
+        _rightMeter.Value = editor?.Levels.Right ?? 0;
+        _selectionStart.Editable = _selectionEnd.Editable = editor != null && !state.IsRecording;
+        _syncingEditor = true;
+        try
+        {
+            _selectionStart.MaxValue = _selectionEnd.MaxValue = editor?.Duration.TotalSeconds ?? 0;
+            _selectionStart.SetValueNoSignal(editor?.SelectionStart.TotalSeconds ?? 0);
+            _selectionEnd.SetValueNoSignal(editor?.SelectionEnd.TotalSeconds ?? 0);
+        }
+        finally { _syncingEditor = false; }
+        _generatePart.Disabled = state.IsRecording || editor == null || editor.SelectionEnd <= editor.SelectionStart;
+    }
+
+    private void SetSelection(double start, double end)
+    {
+        if (_syncingEditor) return;
+        try { _service?.SetSelection(TimeSpan.FromSeconds(start), TimeSpan.FromSeconds(end)); }
+        catch (Exception error) { _status.Text = "Selezione non valida: " + error.Message; }
     }
 
     private void RenderHistory(ConsoleSnapshot state)
@@ -191,9 +227,10 @@ public partial class AudioConsoleView : Control
 
     private void StopRecording()
     {
+        var previous = _service?.GetSnapshot().SelectedRecordingId;
         try { _service?.StopRecording(); }
         catch (Exception error) { _status.Text = "Copia temporanea non riuscita: " + error.Message; return; }
-        _status.Text = _service?.GetSnapshot().HasRecording == true
+        _status.Text = _service?.GetSnapshot().SelectedRecordingId is { } current && current != previous
             ? "Registrazione aggiunta alla lista. Premi ▶ o Salva WAV."
             : "Nessun audio ricevuto. Controlla il microfono e riprova.";
     }
@@ -255,6 +292,26 @@ public partial class AudioConsoleView : Control
         _emptyHistory = GetNode<Label>("%EmptyHistory");
         _play = GetNode<Button>("%PlayButton");
         _stopPlayback = GetNode<Button>("%StopPlaybackButton");
+        var editor = GetNode<Control>("%RecordingEditor");
+        _timeline = editor.GetNode<RecordingTimelineView>("TimelineRow/TimelinePanel/Timeline");
+        _playbackTime = editor.GetNode<Label>("Header/PlaybackTime");
+        _leftMeter = editor.GetNode<ProgressBar>("TimelineRow/LeftMeterColumn/LeftMeter");
+        _rightMeter = editor.GetNode<ProgressBar>("TimelineRow/RightMeterColumn/RightMeter");
+        _selectionStart = editor.GetNode<SpinBox>("SelectionRow/StartTime");
+        _selectionEnd = editor.GetNode<SpinBox>("SelectionRow/EndTime");
+        _generatePart = editor.GetNode<Button>("SelectionRow/GenerateButton");
+        _timeline.SelectionRequested += SetSelection;
+        _selectionStart.ValueChanged += value => SetSelection(value, Math.Max(value, _selectionEnd.Value));
+        _selectionEnd.ValueChanged += value => SetSelection(Math.Min(value, _selectionStart.Value), value);
+        _generatePart.Pressed += () =>
+        {
+            try
+            {
+                var part = _service!.GenerateSelectedPart();
+                _status.Text = part.Name + " aggiunto alla lista. L'originale è intatto.";
+            }
+            catch (Exception error) { _status.Text = "Ritaglio non riuscito: " + error.Message; }
+        };
 
         _devices.ItemSelected += SelectDevice;
         _refresh.Pressed += RefreshDevices;

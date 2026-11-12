@@ -25,6 +25,7 @@ public interface IAudioPlayback : IDisposable
 {
     bool IsPlaying { get; }
     bool IsPaused { get; }
+    TimeSpan Position { get; }
     string? Error { get; }
     void Play(string wavPath);
     void Pause();
@@ -39,6 +40,9 @@ public sealed record RecordingInfo(Guid Id, string Name, DateTimeOffset CreatedA
 }
 
 public readonly record struct WaveformPeak(float Low, float High);
+public readonly record struct AudioLevels(float Left, float Right);
+public sealed record RecordingEditorSnapshot(Guid RecordingId, TimeSpan Duration, TimeSpan Position,
+    TimeSpan SelectionStart, TimeSpan SelectionEnd, WaveformPeak[] Waveform, AudioLevels Levels);
 public enum InputSignal { Quiet, Live, Clipping }
 public enum RecordingStartResult { Started, AlreadyRecording, NoInput }
 
@@ -57,4 +61,6 @@ public sealed record ConsoleSnapshot(
     Guid? SelectedRecordingId,
     bool IsPlaying,
     bool IsPaused,
-    string? PlaybackError);
+    string? PlaybackError,
+    bool IsInputSuspended,
+    RecordingEditorSnapshot? Editor);
