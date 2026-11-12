@@ -98,4 +98,5 @@ public sealed record ConsoleSnapshot(
     RecordingEditorSnapshot? Editor,
     AudioSourceState[] Sources,
     AudioRedirectState Redirect,
-    EqualizerSettings Equalizer);
+    EqualizerSettings Equalizer,
+    EchoSettings Echo);

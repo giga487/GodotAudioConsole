@@ -19,6 +19,7 @@ var output = Path.GetFullPath(Path.Combine(".artifacts", "tests"));
 Directory.CreateDirectory(output);
 RedirectTests.Run(output, Check);
 EqualizerTests.Run(output, Check);
+EchoTests.Run(output, Check);
 if (args.Contains("--redirect-hardware"))
 {
     await RedirectHardwareTest.Run(output, Check);

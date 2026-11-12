@@ -1,0 +1,88 @@
+[gd_scene format=3]
+
+[node name="EchoPanel" type="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Header" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 15
+text = "ECHO • MIX LIVE"
+
+[node name="Enabled" type="CheckBox" parent="Header"]
+layout_mode = 2
+text = "Attivo"
+tooltip_text = "Attiva l'echo o torna al suono originale (bypass)."
+
+[node name="Reset" type="Button" parent="Header"]
+layout_mode = 2
+text = "Reset"
+tooltip_text = "Ripristina 250 ms, feedback 35% e quantità 30%."
+
+[node name="Parameters" type="GridContainer" parent="."]
+layout_mode = 2
+columns = 3
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 6
+
+[node name="DelayLabel" type="Label" parent="Parameters"]
+layout_mode = 2
+text = "Ritardo"
+
+[node name="Delay" type="HSlider" parent="Parameters"]
+layout_mode = 2
+custom_minimum_size = Vector2(140, 24)
+size_flags_horizontal = 3
+min_value = 40.0
+max_value = 1000.0
+step = 10.0
+value = 250.0
+tooltip_text = "Tempo tra le ripetizioni • da 40 a 1000 ms"
+
+[node name="DelayValue" type="Label" parent="Parameters"]
+layout_mode = 2
+custom_minimum_size = Vector2(78, 0)
+horizontal_alignment = 2
+text = "250 ms"
+
+[node name="FeedbackLabel" type="Label" parent="Parameters"]
+layout_mode = 2
+text = "Feedback"
+
+[node name="Feedback" type="HSlider" parent="Parameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 85.0
+value = 35.0
+tooltip_text = "Quanto suono torna nel ritardo: 0% = una sola ripetizione, valori maggiori = coda più lunga."
+
+[node name="FeedbackValue" type="Label" parent="Parameters"]
+layout_mode = 2
+horizontal_alignment = 2
+text = "35%"
+
+[node name="AmountLabel" type="Label" parent="Parameters"]
+layout_mode = 2
+text = "Quantità"
+
+[node name="Amount" type="HSlider" parent="Parameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 100.0
+value = 30.0
+tooltip_text = "Volume delle ripetizioni aggiunte alla voce originale • da 0 a 100%"
+
+[node name="AmountValue" type="Label" parent="Parameters"]
+layout_mode = 2
+horizontal_alignment = 2
+text = "30%"
+
+[node name="Hint" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+autowrap_mode = 3
+text = "Dopo l'EQ, su tutto il mix live e anche senza REC. I file esistenti restano invariati."

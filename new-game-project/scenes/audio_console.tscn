@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://scripts/AudioConsoleView.cs" id="1_console"]
 [ext_resource type="Theme" path="res://themes/console_theme.tres" id="2_theme"]
@@ -10,6 +10,7 @@
 [ext_resource type="PackedScene" path="res://scenes/recording_editor.tscn" id="8_editor"]
 [ext_resource type="PackedScene" path="res://scenes/audio_source_strip.tscn" id="9_source_strip"]
 [ext_resource type="PackedScene" path="res://scenes/equalizer_panel.tscn" id="10_equalizer"]
+[ext_resource type="PackedScene" path="res://scenes/echo_panel.tscn" id="11_echo"]
 
 [node name="AudioConsole" type="Control"]
 layout_mode = 3
@@ -138,6 +139,10 @@ layout_mode = 2
 theme_override_constants/separation = 4
 
 [node name="EqualizerPanel" parent="Margin/Scroll/ConsoleLayout" instance=ExtResource("10_equalizer")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="EchoPanel" parent="Margin/Scroll/ConsoleLayout" instance=ExtResource("11_echo")]
 unique_name_in_owner = true
 layout_mode = 2
 

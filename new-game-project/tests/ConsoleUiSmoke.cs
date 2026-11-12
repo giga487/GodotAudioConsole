@@ -127,6 +127,29 @@ public partial class ConsoleUiSmoke : Node
             Check(eqPanel.GetNode<HSlider>("Bands/Bass").Value == 0 && eqEnabled.ButtonPressed,
                 "EQ reset restores flat gain while preserving enabled state.");
             eqEnabled.ButtonPressed = false;
+            var echoPanel = view.GetNode<Control>("%EchoPanel");
+            var echoEnabled = echoPanel.GetNode<CheckBox>("Header/Enabled");
+            Check(!echoEnabled.ButtonPressed && echoPanel.GetNode<HSlider>("Parameters/Delay").Value == 250,
+                "Echo controls exist in the scene and start bypassed with default delay.");
+            echoEnabled.ButtonPressed = true;
+            echoPanel.GetNode<HSlider>("Parameters/Delay").Value = 300;
+            echoPanel.GetNode<HSlider>("Parameters/Feedback").Value = 45;
+            echoPanel.GetNode<HSlider>("Parameters/Amount").Value = 25;
+            await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
+            Check(_redirect.IsActive && _input.IsRunning && Button("StopButton").Disabled &&
+                echoPanel.GetNode<Label>("Parameters/DelayValue").Text == "300 ms",
+                "Echo can be adjusted while sending live without REC.");
+            if (DisplayServer.GetName() != "headless")
+            {
+                await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+                GetViewport().GetTexture().GetImage().SavePng("res://.godot/echo-preview.png");
+            }
+            echoPanel.GetNode<Button>("Header/Reset").EmitSignal(BaseButton.SignalName.Pressed);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(echoEnabled.ButtonPressed && echoPanel.GetNode<HSlider>("Parameters/Delay").Value == 250 &&
+                echoPanel.GetNode<HSlider>("Parameters/Feedback").Value == 35 && echoPanel.GetNode<HSlider>("Parameters/Amount").Value == 30,
+                "Echo reset restores default parameters while preserving enabled state.");
+            echoEnabled.ButtonPressed = false;
             Press("RedirectStop");
             redirectMode.Select(1);
             redirectMode.EmitSignal(OptionButton.SignalName.ItemSelected, 1L);
@@ -266,11 +289,16 @@ public partial class ConsoleUiSmoke : Node
             eqPanel.GetNode<HSlider>("Bands/Mid").Value = 2;
             eqPanel.GetNode<HSlider>("Bands/Treble").Value = 3;
             eqPanel.GetNode<HSlider>("Bands/Output").Value = -3;
+            echoEnabled.ButtonPressed = true;
+            echoPanel.GetNode<HSlider>("Parameters/Delay").Value = 400;
+            echoPanel.GetNode<HSlider>("Parameters/Feedback").Value = 55;
+            echoPanel.GetNode<HSlider>("Parameters/Amount").Value = 40;
             view.Free(); // Exit must flush changes even when the debounce timer has not elapsed.
             var saved = new LastSetupStore(setupPath).Load()!;
             Check(saved.Sources.Length == 2 && saved.MasterVolumePercent == 67 && saved.Sources[0].VolumePercent == 35,
                 "Closing the UI persists the complete last setup.");
             Check(saved.Equalizer == new EqualizerSettings(true, -4, 2, 3, -3), "Closing persists every EQ control.");
+            Check(saved.Echo == new EchoSettings(true, 400, 55, 40), "Closing persists every echo control.");
             AudioConsoleView Reopen()
             {
                 var reopened = GD.Load<PackedScene>("res://scenes/audio_console.tscn").Instantiate<AudioConsoleView>();
@@ -286,6 +314,12 @@ public partial class ConsoleUiSmoke : Node
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             var restoredRows = restored.GetNode<VBoxContainer>("%SourceRows");
             var restoredEq = restored.GetNode<Control>("%EqualizerPanel");
+            var restoredEcho = restored.GetNode<Control>("%EchoPanel");
+            Check(restoredEcho.GetNode<CheckBox>("Header/Enabled").ButtonPressed &&
+                restoredEcho.GetNode<HSlider>("Parameters/Delay").Value == 400 &&
+                restoredEcho.GetNode<HSlider>("Parameters/Feedback").Value == 55 &&
+                restoredEcho.GetNode<HSlider>("Parameters/Amount").Value == 40,
+                "Every echo control is restored on reopening the UI.");
             Check(restoredEq.GetNode<CheckBox>("Header/Enabled").ButtonPressed &&
                 restoredEq.GetNode<HSlider>("Bands/Bass").Value == -4 && restoredEq.GetNode<HSlider>("Bands/Mid").Value == 2 &&
                 restoredEq.GetNode<HSlider>("Bands/Treble").Value == 3 && restoredEq.GetNode<HSlider>("Bands/Output").Value == -3,

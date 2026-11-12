@@ -7,7 +7,7 @@ Il backend audio attuale usa WASAPI e richiede **Windows**.
 
 | Progetto | Responsabilità | Dipendenze |
 | --- | --- | --- |
-| `libraries/AudioConsole.Core` | Mixer multisorgente, ultimo setup JSON, guadagni, buffer/clock, PCM, timeline, ritaglio, cronologia, ascolto ed esportazione WAV | Solo libreria standard .NET |
+| `libraries/AudioConsole.Core` | Mixer multisorgente, EQ, Echo, ultimo setup JSON, guadagni, buffer/clock, PCM, timeline, ritaglio, cronologia, ascolto ed esportazione WAV | Solo libreria standard .NET |
 | `libraries/AudioConsole.Windows` | Microfoni, cattura dell'uscita PC (loopback), riproduzione WASAPI, conversione campioni | Core e NAudio.Wasapi 2.2.1 |
 | `new-game-project` | Controlli, disegno, finestre, conferme e traduzione dei comandi utente | Core, Windows e Godot |
 | `tests/AudioConsole.Tests` | Test applicativi senza motore e prova hardware opzionale | Core e Windows |
@@ -189,7 +189,7 @@ come microfono nell'altra applicazione, oppure scegli delle cuffie come uscita
 per ascoltarti. Con più sorgenti l'EQ modifica l'intero mix, compreso l'audio PC.
 I comandi sono modificabili durante l'invio e durante REC.
 
-Il percorso è **sorgenti → volumi sorgenti → somma → EQ → volume mix →
+Il percorso è **sorgenti → volumi sorgenti → somma → EQ → Echo → volume mix →
 controllo picchi e saturazione → invio / nuova registrazione**. Se compare PICCO,
 riduci Uscita EQ o Volume mix. Il volume di uscita dell'EQ è escluso in bypass.
 Le registrazioni già presenti conservano il loro suono, anche durante l'ascolto
@@ -202,6 +202,34 @@ graduali, e lo stato dei filtri viene azzerato alla riapertura degli ingressi.
 Il pannello è modificabile in `new-game-project/scenes/equalizer_panel.tscn`.
 Tutti i valori e l'attivazione vengono salvati nel last setup; i vecchi JSON senza
 EQ restano compatibili e vengono caricati con EQ disattivato e valori a zero.
+
+## Echo sul mix dal vivo
+
+Il pannello **Echo • Mix live** aggiunge ripetizioni dopo l'EQ e prima del volume
+finale. Puoi usarlo insieme all'equalizzatore, anche inviando al microfono virtuale
+senza premere REC. Con più sorgenti attive l'effetto agisce sull'intero mix.
+
+- **Attivo** abilita l'effetto; disattivalo per il bypass.
+- **Ritardo**, da 40 a 1000 ms, determina la distanza tra le ripetizioni.
+- **Feedback**, da 0 a 85%, determina quanto dura la coda: a zero c'è una sola
+  ripetizione; aumentando il valore le ripetizioni decadono più lentamente.
+- **Quantità**, da 0 a 100%, regola le ripetizioni aggiunte al suono originale.
+- **Reset** ripristina 250 ms, feedback 35% e quantità 30%, mantenendo Attivo.
+
+I parametri si possono cambiare durante invio e registrazione. Quantità, feedback
+e bypass hanno transizioni graduali; il cambio di ritardo sfuma tra due letture
+del buffer. Il buffer è limitato a un secondo per canale e la coda viene svuotata
+dopo il bypass completo e alla riapertura delle catture, evitando di riprodurre
+vecchi frammenti dopo il riascolto di un file.
+
+Le nuove registrazioni contengono l'effetto, i file già presenti restano invariati.
+STOP REC chiude subito la registrazione: aspetta la fine della coda prima di
+premere STOP se vuoi conservarla nel WAV. Se compare PICCO riduci Volume mix.
+Attivazione e regolazioni sono nel last setup; un vecchio setup senza Echo viene
+caricato con l'effetto disattivato. L'invio non si avvia automaticamente.
+
+L'elaborazione è in `AudioConsole.Core/VoiceEcho.cs`, senza dipendenze da Godot;
+il layout statico è in `new-game-project/scenes/echo_panel.tscn`.
 
 ## Invio a un microfono virtuale
 
@@ -262,6 +290,11 @@ Per l'EQ controllano risposta in dB di ogni banda, bypass, guadagno di uscita,
 canali indipendenti, frequenze di campionamento diverse, transizioni, valori non
 validi, invio senza REC e identità del segnale inviato e registrato. Verificano
 anche persistenza EQ e compatibilità con i setup precedenti.
+Per Echo verificano ritardo al campione, decadimento e singola ripetizione,
+canali indipendenti, feedback massimo, bypass e cancellazione della coda,
+transizioni, sample rate diversi, invio senza REC, PCM registrato identico al
+segnale inviato, file originali invariati e ripristino del setup. Il test UI
+verifica anche avvio, regolazioni, reset e persistenza del pannello Echo.
 Sono un eseguibile di test senza dipendenze da un framework di test esterno;
 restituiscono codice 0 quando tutti i controlli passano.
 
