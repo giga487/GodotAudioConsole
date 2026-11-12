@@ -9,6 +9,23 @@ public sealed record AudioInputDevice(string Id, string Name, AudioSourceKind So
 
 public sealed record AudioSourceSettings(AudioInputDevice Device, double VolumePercent = 100);
 public sealed record AudioSourceState(AudioInputDevice Device, double VolumePercent, AudioLevels Levels, string? Error);
+public sealed record AudioOutputDevice(string Id, string Name, string[] FeedbackInputIds);
+public enum AudioRedirectMode { LiveMix, SelectedRecording }
+public sealed record AudioRedirectSettings(AudioRedirectMode Mode, AudioOutputDevice? Destination);
+public sealed record AudioRedirectState(AudioRedirectMode Mode, AudioOutputDevice? Destination, bool IsActive,
+    Guid? RecordingId, string? Error);
+
+public interface IAudioRedirect : IDisposable
+{
+    IReadOnlyList<AudioOutputDevice> GetDevices();
+    bool IsActive { get; }
+    string? Error { get; }
+    TimeSpan Position { get; }
+    void StartLive(string outputDeviceId, AudioFormat format);
+    void WriteSamples(ReadOnlyMemory<float> samples);
+    void PlayFile(string outputDeviceId, string wavPath);
+    void Stop();
+}
 
 public interface IMultiSourceAudioInput : IAudioInput
 {
@@ -79,4 +96,5 @@ public sealed record ConsoleSnapshot(
     string? PlaybackError,
     bool IsInputSuspended,
     RecordingEditorSnapshot? Editor,
-    AudioSourceState[] Sources);
+    AudioSourceState[] Sources,
+    AudioRedirectState Redirect);

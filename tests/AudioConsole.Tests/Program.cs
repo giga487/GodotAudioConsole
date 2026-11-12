@@ -17,7 +17,12 @@ void Throws<T>(Action action, string message) where T : Exception
 
 var output = Path.GetFullPath(Path.Combine(".artifacts", "tests"));
 Directory.CreateDirectory(output);
-if (args.Contains("--mix-hardware"))
+RedirectTests.Run(output, Check);
+if (args.Contains("--redirect-hardware"))
+{
+    await RedirectHardwareTest.Run(output, Check);
+}
+else if (args.Contains("--mix-hardware"))
 {
     if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("WASAPI requires Windows.");
     using var input = WasapiAudioInput.CreateMixer();

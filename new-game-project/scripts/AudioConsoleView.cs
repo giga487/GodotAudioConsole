@@ -10,6 +10,7 @@ public partial class AudioConsoleView : Control
     [Export] public PackedScene SourceStripScene { get; set; } = null!;
     public IAudioInput? AudioInputOverride { private get; set; }
     public IAudioPlayback? AudioPlaybackOverride { private get; set; }
+    public IAudioRedirect? AudioRedirectOverride { private get; set; }
     public string? SetupFileOverride { private get; set; }
     private LastSetupStore? _setupStore;
     private bool _loadingSetup = true, _setupDirty;
@@ -60,7 +61,9 @@ public partial class AudioConsoleView : Control
             var playback = AudioPlaybackOverride;
             if (playback == null && OperatingSystem.IsWindows() && AudioInputOverride == null)
                 playback = new WasapiAudioPlayback();
-            _service = new AudioConsoleService(input, playback);
+            var redirect = AudioRedirectOverride;
+            if (redirect == null && OperatingSystem.IsWindows() && AudioInputOverride == null) redirect = new WasapiAudioRedirect();
+            _service = new AudioConsoleService(input, playback, redirect: redirect);
             // Synthetic UI tests use an explicit isolated path; normal runs use LocalAppData.
             if (SetupFileOverride != null || AudioInputOverride == null) _setupStore = new LastSetupStore(SetupFileOverride);
             LastSetup? saved = null;
@@ -81,6 +84,7 @@ public partial class AudioConsoleView : Control
                     : "Setup ripristinato parzialmente. " + string.Join(" • ", result.Warnings);
             }
             else if (_deviceList.Count > 0) AddSource();
+            RefreshRedirectDevices();
             _loadingSetup = false;
             if (firstRun) ScheduleSetupSave();
             if (setupNotice != null) _status.Text = setupNotice;
@@ -115,6 +119,7 @@ public partial class AudioConsoleView : Control
         _waveform.ShowHistory(state.Waveform);
         RenderEditor(state);
         RenderSources(state);
+        RenderRedirect(state);
         _record.Disabled = !state.InputAvailable || state.IsRecording;
         _stop.Disabled = !state.IsRecording;
         _save.Disabled = state.IsRecording || !state.HasRecording;
@@ -132,13 +137,13 @@ public partial class AudioConsoleView : Control
         _timer.Text = $"{tenths / 600:00}:{tenths / 10 % 60:00}.{tenths % 10}";
         var computerOutput = state.Sources.Length == 1 && state.Sources[0].Device.Source == AudioSourceKind.ComputerOutput;
         var multiple = state.Sources.Length > 1;
-        _signal.Text = state.IsInputSuspended ? (multiple ? "MIX SOSPESO • RIASCOLTO" : computerOutput ? "PC SOSPESO • RIASCOLTO" : "MIC SOSPESO • RIASCOLTO") : state.Signal switch
+        _signal.Text = state.IsInputSuspended ? (state.Redirect.RecordingId != null ? "INGRESSI SOSPESI • INVIO FILE" : multiple ? "MIX SOSPESO • RIASCOLTO" : computerOutput ? "PC SOSPESO • RIASCOLTO" : "MIC SOSPESO • RIASCOLTO") : state.Signal switch
         {
             InputSignal.Clipping => "PICCO • RIDUCI VOLUME",
             InputSignal.Live => state.IsRecording ? "REC • MIX LIVE" : multiple ? "MIX • LIVE" : computerOutput ? "AUDIO PC • LIVE" : "INGRESSO LIVE",
             _ => state.IsRecording ? "REC • NESSUN SEGNALE" : "NESSUN SEGNALE"
         };
-        _signal.TooltipText = state.IsInputSuspended ? "Cattura disattivata durante il riascolto e la pausa. Si riattiva a STOP o a fine file."
+        _signal.TooltipText = state.IsInputSuspended ? "Cattura disattivata durante il riascolto, la pausa o l'invio di un file. Si riattiva a STOP o a fine file."
             : state.Signal == InputSignal.Quiet
             ? computerOutput ? "Avvia un audio sul PC e controlla che utilizzi l'uscita selezionata."
                 : "Parla nel microfono. Controlla ingresso, volume e permessi microfono del sistema." : "";
@@ -490,6 +495,7 @@ public partial class AudioConsoleView : Control
 
     private void BindControls()
     {
+        BindRedirectControls();
         _setupSaveTimer = GetNode<Godot.Timer>("%SetupSaveTimer");
         _setupSaveTimer.Timeout += SaveSetup;
         _masterGain = GetNode<HSlider>("%VolumeSlider");

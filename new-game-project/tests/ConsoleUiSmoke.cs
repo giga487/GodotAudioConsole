@@ -6,6 +6,7 @@ public partial class ConsoleUiSmoke : Node
 {
     private readonly SyntheticInput _input = new();
     private readonly SyntheticPlayback _playback = new();
+    private readonly SyntheticRedirect _redirect = new();
 
     public override void _Process(double delta) => _input.PushTone(delta);
 
@@ -20,6 +21,7 @@ public partial class ConsoleUiSmoke : Node
                 "Display background and center line must exist without runtime drawing.");
             view.AudioInputOverride = new MultiSourceAudioInput(_input.CreateInput);
             view.AudioPlaybackOverride = _playback;
+            view.AudioRedirectOverride = _redirect;
             var setupPath = ProjectSettings.GlobalizePath($"res://.godot/test-last-setup-{Guid.NewGuid():N}.json");
             view.SetupFileOverride = setupPath;
             AddChild(view);
@@ -93,6 +95,25 @@ public partial class ConsoleUiSmoke : Node
             Press("PlayButton");
             Press("StopPlaybackButton");
             Check(_input.IsRunning, "STOP restores the microphone.");
+            var redirectDevice = view.GetNode<OptionButton>("%RedirectDevice");
+            var redirectMode = view.GetNode<OptionButton>("%RedirectMode");
+            Check(redirectDevice.Selected == 0 && Button("RedirectStart").Disabled, "Sending requires an explicit destination.");
+            redirectDevice.Select(1);
+            redirectDevice.EmitSignal(OptionButton.SignalName.ItemSelected, 1L);
+            Press("RedirectStart");
+            await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
+            Check(_redirect.IsActive && _redirect.SamplesReceived && _input.IsRunning && !Button("RedirectStop").Disabled,
+                "Live send keeps capture running and forwards mixed samples.");
+            Press("RedirectStop");
+            redirectMode.Select(1);
+            redirectMode.EmitSignal(OptionButton.SignalName.ItemSelected, 1L);
+            Press("RedirectStart");
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(_redirect.IsActive && !_input.IsRunning && !_playback.IsPlaying && redirectDevice.Disabled,
+                "File send suspends capture and locks destination changes without speaker playback.");
+            Press("RedirectStop");
+            Check(_input.IsRunning, "Stopping file send restores capture.");
             var dialog = view.GetChildren().OfType<FileDialog>().Single();
             dialog.UseNativeDialog = false; // Keep the save-dialog integration test inside Godot.
             RightClick(0);
@@ -226,6 +247,7 @@ public partial class ConsoleUiSmoke : Node
                 var reopened = GD.Load<PackedScene>("res://scenes/audio_console.tscn").Instantiate<AudioConsoleView>();
                 reopened.AudioInputOverride = new MultiSourceAudioInput(_input.CreateInput);
                 reopened.AudioPlaybackOverride = new SyntheticPlayback();
+                reopened.AudioRedirectOverride = new SyntheticRedirect();
                 reopened.SetupFileOverride = setupPath;
                 AddChild(reopened);
                 return reopened;
@@ -234,6 +256,9 @@ public partial class ConsoleUiSmoke : Node
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             var restoredRows = restored.GetNode<VBoxContainer>("%SourceRows");
+            Check(restored.GetNode<OptionButton>("%RedirectDevice").Selected == 1 &&
+                restored.GetNode<OptionButton>("%RedirectMode").Selected == 1 && restored.GetNode<Button>("%RedirectStop").Disabled,
+                "Routing choices restore without restarting transmission.");
             Check(restoredRows.GetChildCount() == 2 && restored.GetNode<HSlider>("%VolumeSlider").Value == 67 &&
                 restoredRows.GetChildren().OfType<AudioSourceStripView>().First().GetNode<HSlider>("Gain").Value == 35,
                 "Reopening the UI restores sources and all gain controls.");
@@ -300,6 +325,20 @@ public partial class ConsoleUiSmoke : Node
                 instance.SamplesAvailable?.Invoke(samples);
             }
         }
+    }
+
+    private sealed class SyntheticRedirect : IAudioRedirect
+    {
+        public bool IsActive { get; private set; }
+        public bool SamplesReceived { get; private set; }
+        public string? Error => null;
+        public TimeSpan Position => TimeSpan.FromSeconds(0.1);
+        public IReadOnlyList<AudioOutputDevice> GetDevices() => [new("virtual", "CABLE Input • test", ["loopback:virtual"])];
+        public void StartLive(string id, AudioFormat format) => IsActive = true;
+        public void WriteSamples(ReadOnlyMemory<float> samples) => SamplesReceived |= samples.Length > 0;
+        public void PlayFile(string id, string path) { Check(System.IO.File.Exists(path), "Route uses existing WAV"); IsActive = true; }
+        public void Stop() => IsActive = false;
+        public void Dispose() => Stop();
     }
 
     private sealed class SyntheticPlayback : IAudioPlayback

@@ -13,6 +13,9 @@ public sealed class WasapiAudioPlayback : IAudioPlayback
     private WaveFileReader? _reader;
     private volatile string? _error;
     private TimeSpan _duration, _pausedPosition, _clockOffset;
+    private readonly string? _outputDeviceId;
+    private MMDevice? _device;
+    public WasapiAudioPlayback(string? outputDeviceId = null) => _outputDeviceId = outputDeviceId;
     public bool IsPlaying => _output?.PlaybackState == PlaybackState.Playing && _error == null;
     public bool IsPaused => _output?.PlaybackState == PlaybackState.Paused && _error == null;
     public string? Error => _error;
@@ -43,7 +46,14 @@ public sealed class WasapiAudioPlayback : IAudioPlayback
             _reader = new WaveFileReader(wavPath);
             _duration = _reader.TotalTime;
             _pausedPosition = _clockOffset = TimeSpan.Zero;
-            _output = new WasapiOut(AudioClientShareMode.Shared, useEventSync: true, latency: 100);
+            if (_outputDeviceId == null)
+                _output = new WasapiOut(AudioClientShareMode.Shared, useEventSync: true, latency: 100);
+            else
+            {
+                using var enumerator = new MMDeviceEnumerator();
+                _device = enumerator.GetDevice(_outputDeviceId);
+                _output = new WasapiOut(_device, AudioClientShareMode.Shared, useEventSync: true, latency: 100);
+            }
             _output.PlaybackStopped += OnPlaybackStopped;
             _output.Init(_reader);
             _output.Play();
@@ -85,6 +95,8 @@ public sealed class WasapiAudioPlayback : IAudioPlayback
         }
         _reader?.Dispose();
         _reader = null;
+        _device?.Dispose();
+        _device = null;
     }
 
     public void Dispose() => Stop();

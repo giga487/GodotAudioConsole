@@ -203,6 +203,79 @@ theme_override_font_sizes/font_size = 15
 text = "Pronto. Seleziona il microfono e premi Registra."
 autowrap_mode = 3
 
+[node name="RedirectSection" type="VBoxContainer" parent="Margin/Scroll/ConsoleLayout"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Title" type="Label" parent="Margin/Scroll/ConsoleLayout/RedirectSection"]
+layout_mode = 2
+text = "INVIA A UN MICROFONO VIRTUALE"
+theme_override_font_sizes/font_size = 15
+
+[node name="RedirectDevice" type="OptionButton" parent="Margin/Scroll/ConsoleLayout/RedirectSection"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+fit_to_longest_item = false
+item_count = 1
+selected = 0
+popup/item_0/text = "Seleziona uscita virtuale…"
+
+[node name="Actions" type="HBoxContainer" parent="Margin/Scroll/ConsoleLayout/RedirectSection"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="RedirectMode" type="OptionButton" parent="Margin/Scroll/ConsoleLayout/RedirectSection/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+fit_to_longest_item = false
+item_count = 2
+selected = 0
+popup/item_0/text = "Mix dal vivo"
+popup/item_0/id = 0
+popup/item_1/text = "Registrazione selezionata"
+popup/item_1/id = 1
+
+[node name="RedirectRefresh" type="Button" parent="Margin/Scroll/ConsoleLayout/RedirectSection/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Aggiorna"
+
+[node name="RedirectStart" type="Button" parent="Margin/Scroll/ConsoleLayout/RedirectSection/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+icon = ExtResource("5_play")
+tooltip_text = "Avvia invio alla destinazione scelta"
+disabled = true
+
+[node name="RedirectStop" type="Button" parent="Margin/Scroll/ConsoleLayout/RedirectSection/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+icon = ExtResource("7_stop")
+tooltip_text = "Ferma invio"
+disabled = true
+
+[node name="RedirectStatus" type="Label" parent="Margin/Scroll/ConsoleLayout/RedirectSection"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+theme_override_font_sizes/font_size = 13
+text = "Invio fermo."
+
+[node name="Hint" type="Label" parent="Margin/Scroll/ConsoleLayout/RedirectSection"]
+layout_mode = 2
+autowrap_mode = 3
+theme_override_font_sizes/font_size = 13
+text = "VB-CABLE: CABLE Input qui → CABLE Output come microfono nell'altra app."
+
+[node name="VirtualCableHelp" type="LinkButton" parent="Margin/Scroll/ConsoleLayout/RedirectSection"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Scarica e configura VB-CABLE ↗"
+theme_override_font_sizes/font_size = 13
+
 [node name="RecordingEditor" parent="Margin/Scroll/ConsoleLayout" instance=ExtResource("8_editor")]
 unique_name_in_owner = true
 layout_mode = 2

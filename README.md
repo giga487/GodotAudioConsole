@@ -12,7 +12,7 @@ Il backend audio attuale usa WASAPI e richiede **Windows**.
 | `new-game-project` | Controlli, disegno, finestre, conferme e traduzione dei comandi utente | Core, Windows e Godot |
 | `tests/AudioConsole.Tests` | Test applicativi senza motore e prova hardware opzionale | Core e Windows |
 
-Godot crea `AudioConsoleService` passando `IAudioInput` e `IAudioPlayback`, inoltra i comandi e
+Godot crea `AudioConsoleService` passando `IAudioInput`, `IAudioPlayback` e `IAudioRedirect`, inoltra i comandi e
 legge `ConsoleSnapshot`. Gli snapshot sono copie coerenti e possono essere letti
 dal thread grafico mentre il thread audio acquisisce. Il motore non gestisce
 microfoni, bus audio, guadagno, registrazione, riproduzione o codifica WAV.
@@ -176,6 +176,43 @@ Le registrazioni temporanee e la cronologia non sono incluse nel JSON.
 Lettura, validazione, scrittura e risoluzione dei dispositivi sono in
 `AudioConsole.Core/LastSetupStore.cs`; Godot collega soltanto avvio, timer e chiusura.
 
+## Invio a un microfono virtuale
+
+Il pannello **Invia a un microfono virtuale** offre due modalità alternative:
+
+- **Mix dal vivo**: invia tutte le sorgenti attive, con i rispettivi volumi e il
+  volume mix finale. Puoi anche registrare il mix mentre lo invii.
+- **Registrazione selezionata**: invia dall'inizio la voce selezionata nella lista,
+  anche temporanea o ritagliata. Usa il volume già presente nel file. Gli ingressi
+  vengono sospesi fino a STOP o fine file; timeline, tempo e livelli seguono l'invio.
+
+Scegli una destinazione e premi **▶** nel pannello di invio; **■** interrompe.
+L'ascolto locale interrompe l'invio. Cambiare registrazione o generare un ritaglio
+ferma l'eventuale invio del file precedente. Un errore dell'uscita non interrompe
+una registrazione del mix in corso. Destinazione e modalità sono incluse nel
+last setup, ma l'invio **non riparte automaticamente** all'apertura.
+
+La console scrive su un'uscita audio Windows: per presentarla come microfono
+ad altre applicazioni occorre un dispositivo virtuale. Configurazione con
+[VB-CABLE, sito e istruzioni ufficiali](https://vb-audio.com/Cable/):
+
+1. Scarica il pacchetto dal sito ufficiale, estrailo e avvia l'installer adatto al
+   sistema come amministratore. Installa il driver e riavvia Windows come indicato
+   dal produttore. L'app non installa driver né modifica i dispositivi predefiniti.
+2. Nella console premi **Aggiorna** nel pannello di invio e scegli **CABLE Input**.
+3. Nell'app che deve ricevere l'audio scegli **CABLE Output** come microfono.
+4. Scegli **Mix dal vivo** oppure **Registrazione selezionata** e premi **▶**.
+   Per parlare insieme all'audio del PC, usa il mix dal vivo con microfono e
+   loopback dell'uscita fisica sulla quale ascolti il PC.
+
+Non aggiungere CABLE Output al mix che invii a CABLE Input. La console rifiuta
+il loopback diretto dell'uscita di invio e le coppie riconosciute di cavi virtuali;
+collegamenti esterni complessi (per esempio routing aggiuntivo in VoiceMeeter)
+restano responsabilità della configurazione esterna. Le uscite fisiche sono
+disponibili anche per instradare audio verso un dispositivo diverso: non diventano
+microfoni senza un collegamento virtuale. Non viene selezionata automaticamente
+un'uscita alternativa quando quella salvata manca.
+
 ## Verifica
 
 Test applicativi, senza Godot e senza aprire dispositivi audio:
@@ -225,6 +262,21 @@ un mix a volume finale 0 e verifica WAV stereo 48 kHz, clock e ripristino delle 
 ```powershell
 dotnet run --project tests/AudioConsole.Tests -- --mix-hardware
 ```
+
+Il test `--redirect-hardware` invia brevemente un tono a basso volume all'uscita
+predefinita, sia come flusso live sia da file, e verifica il segnale tramite
+loopback dello stesso endpoint, il clock e la fine naturale. Non richiede un
+cavo virtuale; il collegamento verso il microfono di un'altra app si verifica
+separatamente dopo aver installato il driver:
+
+```powershell
+dotnet run --project tests/AudioConsole.Tests -- --redirect-hardware
+```
+
+I test applicativi verificano inoltre invio dopo i volumi, invio contemporaneo
+alla registrazione, blocco del feedback, sospensione/ripristino degli ingressi,
+errori dell'uscita e ripristino del routing senza avvio automatico. Il test UI
+esercita selezione destinazione/modalità, avvio/arresto e ripristino dei controlli.
 
 Test della UI C# (dopo la build, sostituire `godot` con l'eseguibile .NET):
 

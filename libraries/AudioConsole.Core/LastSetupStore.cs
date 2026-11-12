@@ -3,7 +3,8 @@ using System.Text.Json.Serialization;
 
 namespace AudioConsole.Core;
 
-public sealed record LastSetup(int Version, double MasterVolumePercent, AudioSourceSettings[] Sources);
+public sealed record LastSetup(int Version, double MasterVolumePercent, AudioSourceSettings[] Sources,
+    AudioRedirectSettings? Redirect = null);
 public sealed record SetupRestoreResult(int RestoredCount, string[] Warnings);
 
 /// <summary>Versioned device/gain settings only: no recordings, playback or Godot objects.</summary>
@@ -24,7 +25,8 @@ public sealed class LastSetupStore
     public LastSetupStore(string? path = null) => FilePath = Path.GetFullPath(path ?? DefaultPath);
 
     public static LastSetup Capture(ConsoleSnapshot state) => new(CurrentVersion, state.VolumePercent,
-        state.Sources.Select(source => new AudioSourceSettings(source.Device, source.VolumePercent)).ToArray());
+        state.Sources.Select(source => new AudioSourceSettings(source.Device, source.VolumePercent)).ToArray(),
+        new(state.Redirect.Mode, state.Redirect.Destination));
 
     public LastSetup? Load()
     {
@@ -62,6 +64,9 @@ public sealed class LastSetupStore
         if (setup.Version != CurrentVersion) throw new InvalidDataException("Versione del last setup non supportata.");
         StereoMixer.ValidateGain(setup.MasterVolumePercent);
         if (setup.Sources == null) throw new InvalidDataException("Lista delle sorgenti mancante.");
+        if (setup.Redirect != null && (!Enum.IsDefined(setup.Redirect.Mode) ||
+            setup.Redirect.Destination != null && string.IsNullOrWhiteSpace(setup.Redirect.Destination.Id)))
+            throw new InvalidDataException("Configurazione invio audio non valida.");
         var identities = new HashSet<string>(StringComparer.Ordinal);
         foreach (var source in setup.Sources)
         {
@@ -78,6 +83,17 @@ public sealed class LastSetupStore
     {
         Validate(setup);
         var warnings = new List<string>();
+        if (setup.Redirect != null)
+        {
+            try
+            {
+                var savedDestination = setup.Redirect.Destination;
+                var destination = savedDestination == null ? null : service.GetRedirectDevices().FirstOrDefault(d => d.Id == savedDestination.Id);
+                if (savedDestination != null && destination == null) warnings.Add(savedDestination.Name + ": uscita di invio non disponibile.");
+                service.ConfigureRedirect(destination, setup.Redirect.Mode);
+            }
+            catch (Exception error) { warnings.Add("Invio audio: " + error.Message); }
+        }
         var resolved = new List<AudioSourceSettings>();
         foreach (var group in setup.Sources.GroupBy(source => source.Device.Source))
         {

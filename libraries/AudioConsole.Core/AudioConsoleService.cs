@@ -8,7 +8,7 @@ namespace AudioConsole.Core;
 /// never touch the UI; commands/snapshots and callbacks share a short-lived lock.
 /// Device lifecycle commands are serialized by the caller (normally the UI thread).
 /// </summary>
-public sealed class AudioConsoleService : IDisposable
+public sealed partial class AudioConsoleService : IDisposable
 {
     private readonly object _gate = new();
     private readonly IAudioInput _input;
@@ -32,10 +32,11 @@ public sealed class AudioConsoleService : IDisposable
     private long _lastSignal, _lastClip;
     private long _recordedFrames;
 
-    public AudioConsoleService(IAudioInput input, IAudioPlayback? playback = null, string? temporaryRoot = null)
+    public AudioConsoleService(IAudioInput input, IAudioPlayback? playback = null, string? temporaryRoot = null, IAudioRedirect? redirect = null)
     {
         _input = input ?? throw new ArgumentNullException(nameof(input));
         _playback = playback;
+        _redirect = redirect;
         _recordings = new RecordingStore(temporaryRoot);
         _input.SamplesAvailable += ReceiveSamples;
         _input.Failed += InputFailed;
@@ -68,6 +69,8 @@ public sealed class AudioConsoleService : IDisposable
     {
         if (_input is not IMultiSourceAudioInput multi) throw new NotSupportedException("Mixer non disponibile.");
         _ = new StereoMixer(sources); // Validate before stopping the existing configuration.
+        if (_redirectActive && _redirectMode == AudioRedirectMode.LiveMix) CheckFeedback(sources.Select(s => s.Device.Identity));
+        if (sources.Count == 0) StopRedirect();
         DisconnectInput();
         multi.ConfigureSources(sources);
         if (sources.Count > 0) SelectInput(MultiSourceAudioInput.MixDeviceId);
@@ -86,6 +89,7 @@ public sealed class AudioConsoleService : IDisposable
     public void SelectInput(string deviceId)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_redirectActive && _redirectMode == AudioRedirectMode.LiveMix) CheckFeedback([deviceId]);
         lock (_gate)
         {
             if (_isRecording) throw new InvalidOperationException("Stop recording before changing input.");
@@ -126,6 +130,7 @@ public sealed class AudioConsoleService : IDisposable
 
     public RecordingStartResult StartRecording()
     {
+        StopFileRedirect();
         StopPlayback();
         lock (_gate)
         {
@@ -180,6 +185,7 @@ public sealed class AudioConsoleService : IDisposable
             if (_isRecording) throw new InvalidOperationException("Ferma la registrazione prima di cambiare selezione.");
             if (_recordings.Find(id) == null) throw new ArgumentException("Registrazione non disponibile.", nameof(id));
         }
+        StopFileRedirect();
         StopPlayback();
         lock (_gate)
         {
@@ -217,6 +223,7 @@ public sealed class AudioConsoleService : IDisposable
             if (_isRecording || _selectedAudio == null || _selectionEndFrame <= _selectionStartFrame)
                 throw new InvalidOperationException("Seleziona un intervallo non vuoto della registrazione.");
         }
+        StopFileRedirect();
         StopPlayback();
         lock (_gate)
         {
@@ -233,6 +240,7 @@ public sealed class AudioConsoleService : IDisposable
 
     public void PlaySelected()
     {
+        StopRedirect();
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -279,10 +287,24 @@ public sealed class AudioConsoleService : IDisposable
     /// <summary>Call on the application's command thread to restore capture after natural playback completion.</summary>
     public void Update()
     {
+        bool stopRedirect;
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (!_inputSuspended || _playback?.IsPlaying == true || _playback?.IsPaused == true) return;
+            stopRedirect = _redirectActive && (_redirect?.IsActive != true || _redirect.Error != null ||
+                _redirectError != null || !_inputAvailable && _redirectMode == AudioRedirectMode.LiveMix);
+            if (stopRedirect)
+            {
+                _redirectError ??= _redirect?.Error;
+                if (_redirectMode == AudioRedirectMode.SelectedRecording && _redirectError == null)
+                    _playhead = _selectedAudio?.Duration ?? TimeSpan.Zero;
+            }
+        }
+        if (stopRedirect) StopRedirect();
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_inputSuspended || _playback?.IsPlaying == true || _playback?.IsPaused == true || _redirectActive) return;
             _playhead = _playback?.Error == null ? _selectedAudio?.Duration ?? TimeSpan.Zero : _playhead;
             _playback?.Stop();
         }
@@ -293,7 +315,8 @@ public sealed class AudioConsoleService : IDisposable
     {
         lock (_gate)
         {
-            if (_disposed || !_inputSuspended) return;
+            if (_disposed || !_inputSuspended || _playback?.IsPlaying == true || _playback?.IsPaused == true ||
+                (_redirectActive && _redirectMode == AudioRedirectMode.SelectedRecording)) return;
             _inputSuspended = false;
             if (!_inputAvailable || _selectedInputId == null) return;
             try
@@ -331,17 +354,20 @@ public sealed class AudioConsoleService : IDisposable
             if (!_isRecording && _pcm.Length == 0) elapsed = selected?.Duration ?? TimeSpan.Zero;
             var playing = _playback?.IsPlaying == true;
             if (playing || _playback?.IsPaused == true) _playhead = _playback!.Position;
+            var sendingFile = _redirectActive && _redirectMode == AudioRedirectMode.SelectedRecording;
+            if (sendingFile) _playhead = _redirect!.Position;
             RecordingEditorSnapshot? editor = null;
             if (_selectedAudio != null && _selectedRecordingId.HasValue)
                 editor = new(_selectedRecordingId.Value, _selectedAudio.Duration, _playhead,
                     TimeSpan.FromSeconds((double)_selectionStartFrame / _selectedAudio.Format.SampleRate),
                     TimeSpan.FromSeconds((double)_selectionEndFrame / _selectedAudio.Format.SampleRate),
-                    (WaveformPeak[])_selectedAudio.Overview.Clone(), playing ? _selectedAudio.LevelsAt(_playhead) : default);
+                    (WaveformPeak[])_selectedAudio.Overview.Clone(), playing || sendingFile ? _selectedAudio.LevelsAt(_playhead) : default);
             return new(_inputAvailable, _isRecording, selected != null || _pcm.Length > 0,
                 _pcm.Length > 0 || recordings.Any(recording => !recording.IsExported),
                 _volume, elapsed, signal, _inputError, history, recordings, _selectedRecordingId,
                 playing, _playback?.IsPaused == true, _playback?.Error, _inputSuspended, editor,
-                (_input as IMultiSourceAudioInput)?.GetSources() ?? []);
+                (_input as IMultiSourceAudioInput)?.GetSources() ?? [],
+                new(_redirectMode, _redirectDestination, _redirectActive, sendingFile ? _selectedRecordingId : null, _redirectError));
         }
     }
 
@@ -354,12 +380,15 @@ public sealed class AudioConsoleService : IDisposable
             var gain = (float)(_volume / 100);
             var framesPerPeak = Math.Max(1, _format.SampleRate / 120);
             Span<byte> encoded = stackalloc byte[2];
+            var redirected = _redirectActive && _redirectMode == AudioRedirectMode.LiveMix ? new float[span.Length] : null;
+            var sampleIndex = 0;
             foreach (var source in span)
             {
                 var value = float.IsFinite(source) ? source * gain : 0;
                 if (Math.Abs(value) > 0.0001f) _lastSignal = Stopwatch.GetTimestamp();
                 if (Math.Abs(value) >= 0.99f) _lastClip = Stopwatch.GetTimestamp();
                 value = Math.Clamp(value, -1, 1);
+                if (redirected != null) redirected[sampleIndex++] = value;
                 _low = Math.Min(_low, value);
                 _high = Math.Max(_high, value);
                 if (_isRecording)
@@ -377,6 +406,9 @@ public sealed class AudioConsoleService : IDisposable
                 _peakFrames = 0;
                 _low = _high = 0;
             }
+            if (redirected != null)
+                try { _redirect!.WriteSamples(redirected); }
+                catch (Exception error) { _redirectError = error.Message; }
         }
     }
 
@@ -404,6 +436,7 @@ public sealed class AudioConsoleService : IDisposable
         _input.SamplesAvailable -= ReceiveSamples;
         _input.Failed -= InputFailed;
         _input.Dispose();
+        _redirect?.Dispose();
         _playback?.Dispose();
         _recordings.Dispose();
         _pcm.Dispose();
