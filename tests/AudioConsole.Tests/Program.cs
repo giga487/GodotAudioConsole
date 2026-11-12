@@ -400,6 +400,59 @@ else
         Check(!mixSession.GetSnapshot().InputAvailable && captures.All(capture => !capture.IsRunning) && mixSession.GetSnapshot().Recordings.Length >= mixedRetained,
             "Removing all sources closes capture and preserves history.");
     }
+
+    var setupDirectory = Path.Combine(output, "setup-" + Guid.NewGuid().ToString("N"));
+    var setupStore = new LastSetupStore(Path.Combine(setupDirectory, "last-setup.json"));
+    Check(setupStore.Load() == null, "A missing setup file represents first launch.");
+    var savedSetup = new LastSetup(LastSetupStore.CurrentVersion, 62,
+        [new(new("fake", "Microfono"), 33), new(new("fake-output", "Uscita PC", AudioSourceKind.ComputerOutput), 75)]);
+    setupStore.Save(savedSetup);
+    var loadedSetup = setupStore.Load()!;
+    Check(loadedSetup.MasterVolumePercent == 62 && loadedSetup.Sources.Length == 2 && loadedSetup.Sources[0].VolumePercent == 33,
+        "JSON round-trip retains master gain, source identities and individual gains.");
+    var setupJson = File.ReadAllText(setupStore.FilePath);
+    Check(setupJson.Contains("ComputerOutput") && !setupJson.Contains("levels") && !setupJson.Contains("recordings") && !setupJson.Contains("identity"),
+        "Setup JSON contains only reusable settings, not audio or transient state.");
+    Check(Directory.GetFiles(setupDirectory, "*.tmp").Length == 0, "Atomic setup saves leave no temporary files.");
+    using (var restored = new AudioConsoleService(new MultiSourceAudioInput(() => new FakeInput()), new FakePlayback(), output))
+    {
+        var result = LastSetupStore.Restore(restored, loadedSetup);
+        var state = restored.GetSnapshot();
+        Check(result.RestoredCount == 2 && result.Warnings.Length == 0 && state.VolumePercent == 62 &&
+            state.Sources.Single(source => source.Device.Id == "fake-output").VolumePercent == 75 && !state.IsRecording,
+            "Restore opens both sources with saved gains without starting a recording.");
+    }
+    using (var missing = new AudioConsoleService(new MultiSourceAudioInput(() => new FakeInput { HideOutput = true }), temporaryRoot: output))
+    {
+        var result = LastSetupStore.Restore(missing, loadedSetup);
+        Check(result.RestoredCount == 1 && result.Warnings.Length == 1 && missing.GetSnapshot().Sources[0].VolumePercent == 33,
+            "Missing devices do not block restoration of available sources.");
+        Check(File.ReadAllText(setupStore.FilePath) == setupJson, "Partial restoration never rewrites the saved configuration.");
+    }
+    using (var blocked = new AudioConsoleService(new MultiSourceAudioInput(() => new FakeInput { FailDeviceId = "fake-output" }), temporaryRoot: output))
+    {
+        var result = LastSetupStore.Restore(blocked, loadedSetup);
+        Check(result.RestoredCount == 1 && result.Warnings.Length == 1 && blocked.GetSnapshot().InputAvailable,
+            "An enumerated device that fails to open must not block other sources.");
+        var empty = new LastSetup(LastSetupStore.CurrentVersion, 0, []);
+        setupStore.Save(empty);
+        LastSetupStore.Restore(blocked, setupStore.Load()!);
+        Check(blocked.GetSnapshot().Sources.Length == 0 && !blocked.GetSnapshot().InputAvailable && blocked.GetSnapshot().VolumePercent == 0,
+            "An explicitly empty setup and muted master must remain empty and muted.");
+    }
+    var validJson = File.ReadAllText(setupStore.FilePath);
+    Throws<InvalidDataException>(() => setupStore.Save(savedSetup with { Version = 99 }), "Unsupported setup versions must be rejected.");
+    Throws<ArgumentOutOfRangeException>(() => setupStore.Save(savedSetup with { MasterVolumePercent = 201 }), "Invalid setup gains must be rejected.");
+    Throws<InvalidDataException>(() => setupStore.Save(savedSetup with { Sources = [savedSetup.Sources[0], savedSetup.Sources[0]] }), "Duplicate setup sources must be rejected.");
+    Check(File.ReadAllText(setupStore.FilePath) == validJson, "Invalid save attempts must preserve the previous setup.");
+    File.WriteAllText(setupStore.FilePath, "{ broken JSON");
+    Throws<System.Text.Json.JsonException>(() => setupStore.Load(), "Corrupt JSON must produce a recoverable load error.");
+    Check(File.ReadAllText(setupStore.FilePath) == "{ broken JSON", "Loading corrupt settings must not modify the original file.");
+    var blockedParent = Path.Combine(setupDirectory, "not-a-directory");
+    File.WriteAllText(blockedParent, "preserve");
+    Throws<IOException>(() => new LastSetupStore(Path.Combine(blockedParent, "last-setup.json")).Save(savedSetup),
+        "Unwritable setup paths must surface a save error.");
+    Check(File.ReadAllText(blockedParent) == "preserve", "A failed setup save must not damage existing files.");
 }
 
 Console.WriteLine($"Audio console C# tests: {(failures == 0 ? "PASS" : "FAIL")} ({failures} failures)");
@@ -417,11 +470,18 @@ internal sealed class FakeInput : IAudioInput
 {
     public bool IsRunning { get; private set; }
     public string? LastDeviceId { get; private set; }
+    public bool HideOutput { get; init; }
+    public string? FailDeviceId { get; init; }
     public event Action<ReadOnlyMemory<float>>? SamplesAvailable;
     public event Action<string>? Failed;
     public IReadOnlyList<AudioInputDevice> GetDevices(AudioSourceKind source = AudioSourceKind.Microphone)
-        => [new(source == AudioSourceKind.ComputerOutput ? "fake-output" : "fake", "Synthetic input", source)];
-    public AudioFormat Start(string deviceId) { IsRunning = true; LastDeviceId = deviceId; return new(48000, 2); }
+        => source == AudioSourceKind.ComputerOutput && HideOutput ? []
+            : [new(source == AudioSourceKind.ComputerOutput ? "fake-output" : "fake", "Synthetic input", source)];
+    public AudioFormat Start(string deviceId)
+    {
+        if (deviceId == FailDeviceId) throw new InvalidOperationException("Device cannot be opened.");
+        IsRunning = true; LastDeviceId = deviceId; return new(48000, 2);
+    }
     public void Stop() => IsRunning = false;
     public void Push(ReadOnlyMemory<float> samples) => SamplesAvailable?.Invoke(samples);
     public void Fail(string message) => Failed?.Invoke(message);

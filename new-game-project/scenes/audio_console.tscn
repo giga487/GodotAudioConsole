@@ -295,3 +295,8 @@ title = "Registrazioni temporanee"
 dialog_text = "Ci sono registrazioni non esportate. Chiudendo perderai le copie temporanee. Vuoi uscire?"
 ok_button_text = "Esci"
 cancel_button_text = "Annulla"
+
+[node name="SetupSaveTimer" type="Timer" parent="."]
+unique_name_in_owner = true
+wait_time = 0.4
+one_shot = true

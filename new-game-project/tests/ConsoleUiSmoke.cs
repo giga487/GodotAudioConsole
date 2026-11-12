@@ -20,6 +20,8 @@ public partial class ConsoleUiSmoke : Node
                 "Display background and center line must exist without runtime drawing.");
             view.AudioInputOverride = new MultiSourceAudioInput(_input.CreateInput);
             view.AudioPlaybackOverride = _playback;
+            var setupPath = ProjectSettings.GlobalizePath($"res://.godot/test-last-setup-{Guid.NewGuid():N}.json");
+            view.SetupFileOverride = setupPath;
             AddChild(view);
             await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
             Button Button(string name) => view.GetNode<Button>("%" + name);
@@ -200,6 +202,9 @@ public partial class ConsoleUiSmoke : Node
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             Check(sourceRows.GetChildCount() == 2 && list.ItemCount == 4, "Two sources produce one new mixed recording in history.");
+            await ToSignal(GetTree().CreateTimer(0.45), SceneTreeTimer.SignalName.Timeout);
+            Check(new LastSetupStore(setupPath).Load() is { Sources.Length: 2, MasterVolumePercent: 50 },
+                "Setup changes are saved automatically after the debounce interval.");
             view.Notification((int)NotificationWMCloseRequest);
             Check(confirmation.Visible, "Closing with unsaved audio requires confirmation.");
             confirmation.Hide();
@@ -210,9 +215,47 @@ public partial class ConsoleUiSmoke : Node
                 await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
                 GetViewport().GetTexture().GetImage().SavePng("res://.godot/csharp-console-preview.png");
             }
+            view.GetNode<HSlider>("%VolumeSlider").Value = 67;
+            sourceRows.GetChildren().OfType<AudioSourceStripView>().First().GetNode<HSlider>("Gain").Value = 35;
+            view.Free(); // Exit must flush changes even when the debounce timer has not elapsed.
+            var saved = new LastSetupStore(setupPath).Load()!;
+            Check(saved.Sources.Length == 2 && saved.MasterVolumePercent == 67 && saved.Sources[0].VolumePercent == 35,
+                "Closing the UI persists the complete last setup.");
+            AudioConsoleView Reopen()
+            {
+                var reopened = GD.Load<PackedScene>("res://scenes/audio_console.tscn").Instantiate<AudioConsoleView>();
+                reopened.AudioInputOverride = new MultiSourceAudioInput(_input.CreateInput);
+                reopened.AudioPlaybackOverride = new SyntheticPlayback();
+                reopened.SetupFileOverride = setupPath;
+                AddChild(reopened);
+                return reopened;
+            }
+            var restored = Reopen();
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            var restoredRows = restored.GetNode<VBoxContainer>("%SourceRows");
+            Check(restoredRows.GetChildCount() == 2 && restored.GetNode<HSlider>("%VolumeSlider").Value == 67 &&
+                restoredRows.GetChildren().OfType<AudioSourceStripView>().First().GetNode<HSlider>("Gain").Value == 35,
+                "Reopening the UI restores sources and all gain controls.");
+            foreach (var strip in restoredRows.GetChildren().OfType<AudioSourceStripView>().ToArray())
+                strip.GetNode<Button>("Remove").EmitSignal(BaseButton.SignalName.Pressed);
+            restored.Free();
+            var emptyRestored = Reopen();
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(emptyRestored.GetNode<VBoxContainer>("%SourceRows").GetChildCount() == 0 && emptyRestored.GetNode<Button>("%RecordButton").Disabled,
+                "An empty saved setup must not silently add a microphone.");
+            emptyRestored.Free();
+            System.IO.File.WriteAllText(setupPath, "{ broken setup");
+            var corruptRestored = Reopen();
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(corruptRestored.GetNode<Label>("%StatusLabel").Text.StartsWith("Last setup non caricato"),
+                "A damaged setup must be reported without preventing UI startup.");
+            corruptRestored.Free();
+            Check(System.IO.File.ReadAllText(setupPath) == "{ broken setup", "Fallback startup must not overwrite a damaged setup.");
             GD.Print("C# Godot UI integration: PASS");
-            view.Notification((int)NotificationWMCloseRequest);
-            confirmation.EmitSignal(ConfirmationDialog.SignalName.Confirmed);
+            GetTree().Quit();
         }
         catch (Exception error)
         {

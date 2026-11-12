@@ -7,7 +7,7 @@ Il backend audio attuale usa WASAPI e richiede **Windows**.
 
 | Progetto | Responsabilità | Dipendenze |
 | --- | --- | --- |
-| `libraries/AudioConsole.Core` | Mixer multisorgente, guadagni, buffer/clock, PCM, timeline, livelli, ritaglio, cronologia, ascolto ed esportazione WAV | Solo libreria standard .NET |
+| `libraries/AudioConsole.Core` | Mixer multisorgente, ultimo setup JSON, guadagni, buffer/clock, PCM, timeline, ritaglio, cronologia, ascolto ed esportazione WAV | Solo libreria standard .NET |
 | `libraries/AudioConsole.Windows` | Microfoni, cattura dell'uscita PC (loopback), riproduzione WASAPI, conversione campioni | Core e NAudio.Wasapi 2.2.1 |
 | `new-game-project` | Controlli, disegno, finestre, conferme e traduzione dei comandi utente | Core, Windows e Godot |
 | `tests/AudioConsole.Tests` | Test applicativi senza motore e prova hardware opzionale | Core e Windows |
@@ -149,6 +149,33 @@ accorciare la durata del file. Un errore di una sorgente ferma la registrazione 
 conserva quanto acquisito; rimuovi la sorgente segnalata per riprendere con le altre.
 Questa versione salva un mix unico, senza tracce separate per ciascuna sorgente.
 
+## Ultimo setup
+
+L'app salva automaticamente la configurazione in:
+
+```text
+%LOCALAPPDATA%\GodotAudioConsole\last-setup.json
+```
+
+Il JSON contiene versione del formato, sorgenti attive (tipo, nome e identificativo
+del dispositivo), volume di ogni sorgente e volume finale del mix. Le modifiche
+vengono salvate dopo 0,4 secondi senza ulteriori cambiamenti; la chiusura dell'app
+salva subito eventuali modifiche ancora in attesa. La scrittura usa un file
+temporaneo e sostituisce il precedente solo quando è completa.
+
+All'avvio vengono ripristinati sorgenti e volumi, senza avviare REC. Anche una
+configurazione con zero sorgenti viene rispettata. I dispositivi non disponibili
+o che non si aprono vengono segnalati, ripristinando quelli funzionanti. Il setup
+salvato non viene riscritto dal solo ripristino parziale: resta disponibile per un
+successivo avvio con i dispositivi ricollegati. Una successiva modifica manuale
+salva invece la configurazione effettiva della sessione corrente.
+
+Un file corrotto o di versione non supportata viene segnalato e l'app parte con
+la configurazione iniziale; il file resta intatto finché non modifichi il setup.
+Le registrazioni temporanee e la cronologia non sono incluse nel JSON.
+Lettura, validazione, scrittura e risoluzione dei dispositivi sono in
+`AudioConsole.Core/LastSetupStore.cs`; Godot collega soltanto avvio, timer e chiusura.
+
 ## Verifica
 
 Test applicativi, senza Godot e senza aprire dispositivi audio:
@@ -165,6 +192,8 @@ selezione inversa, ritagli PCM esatti e originali invariati anche con lista pien
 errori di scrittura e disconnessione dell'ingresso.
 Verificano anche somma stereo, guadagni separati, silenzio in mancanza di dati,
 alias duplicati, clock del mix, sospensione di tutte le sorgenti e ripristino dopo errori.
+Verificano anche lettura/scrittura JSON, volumi ripristinati, setup vuoto, dispositivi
+mancanti o non apribili, file corrotto/versione errata e conservazione del file precedente.
 Sono un eseguibile di test senza dipendenze da un framework di test esterno;
 restituiscono codice 0 quando tutti i controlli passano.
 
@@ -209,6 +238,9 @@ timer e livelli separati, selezione trascinabile e generazione del ritaglio,
 salvataggio tramite DLL e conferma di uscita. Senza `--headless` verifica anche il rendering e salva
 `.godot/csharp-console-preview.png`. I file temporanei sono in `.artifacts`
 o `.godot`, entrambe ignorate da Git.
+Il test UI usa un percorso di setup isolato e verifica salvataggio automatico,
+chiusura/riapertura, volumi, configurazione vuota e file corrotto, senza toccare
+il last setup reale dell'utente.
 
 Per la verifica manuale, seleziona un ingresso, parla, registra cambiando volume,
 premi Stop e riascolta dalla lista. Registra più volte senza esportare, seleziona

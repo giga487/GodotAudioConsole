@@ -10,6 +10,11 @@ public partial class AudioConsoleView : Control
     [Export] public PackedScene SourceStripScene { get; set; } = null!;
     public IAudioInput? AudioInputOverride { private get; set; }
     public IAudioPlayback? AudioPlaybackOverride { private get; set; }
+    public string? SetupFileOverride { private get; set; }
+    private LastSetupStore? _setupStore;
+    private bool _loadingSetup = true, _setupDirty;
+    private Godot.Timer _setupSaveTimer = null!;
+    private HSlider _masterGain = null!;
     private AudioConsoleService? _service;
     private IReadOnlyList<AudioInputDevice> _deviceList = [];
     private string? _selectedDeviceId;
@@ -56,10 +61,50 @@ public partial class AudioConsoleView : Control
             if (playback == null && OperatingSystem.IsWindows() && AudioInputOverride == null)
                 playback = new WasapiAudioPlayback();
             _service = new AudioConsoleService(input, playback);
+            // Synthetic UI tests use an explicit isolated path; normal runs use LocalAppData.
+            if (SetupFileOverride != null || AudioInputOverride == null) _setupStore = new LastSetupStore(SetupFileOverride);
+            LastSetup? saved = null;
+            string? setupNotice = null;
+            var firstRun = false;
+            if (_setupStore != null)
+            {
+                try { saved = _setupStore.Load(); firstRun = saved == null; }
+                catch (Exception error) { setupNotice = "Last setup non caricato: " + error.Message; }
+            }
             RefreshDevices();
-            if (_deviceList.Count > 0) AddSource();
+            if (saved != null)
+            {
+                var result = LastSetupStore.Restore(_service, saved);
+                _masterGain.SetValueNoSignal(saved.MasterVolumePercent);
+                _volumeLabel.Text = $"{saved.MasterVolumePercent:0}%";
+                setupNotice = result.Warnings.Length == 0 ? $"Ultimo setup ripristinato: {result.RestoredCount} sorgenti."
+                    : "Setup ripristinato parzialmente. " + string.Join(" • ", result.Warnings);
+            }
+            else if (_deviceList.Count > 0) AddSource();
+            _loadingSetup = false;
+            if (firstRun) ScheduleSetupSave();
+            if (setupNotice != null) _status.Text = setupNotice;
         }
         catch (Exception error) { ShowError(error); }
+        finally { _loadingSetup = false; }
+    }
+
+    private void ScheduleSetupSave()
+    {
+        if (_loadingSetup || _setupStore == null) return;
+        _setupDirty = true;
+        _setupSaveTimer.Start();
+    }
+
+    private void SaveSetup()
+    {
+        if (!_setupDirty || _setupStore == null || _service == null) return;
+        try
+        {
+            _setupStore.Save(LastSetupStore.Capture(_service.GetSnapshot()));
+            _setupDirty = false;
+        }
+        catch (Exception error) { _status.Text = "Salvataggio last setup non riuscito: " + error.Message; }
     }
 
     public override void _Process(double delta)
@@ -122,7 +167,7 @@ public partial class AudioConsoleView : Control
                 strip = SourceStripScene.Instantiate<AudioSourceStripView>();
                 strip.GainRequested += (identity, value) =>
                 {
-                    try { _service!.SetSourceVolume(identity, value); }
+                    try { _service!.SetSourceVolume(identity, value); ScheduleSetupSave(); }
                     catch (Exception error) { _status.Text = error.Message; }
                 };
                 strip.RemoveRequested += RemoveSource;
@@ -150,6 +195,7 @@ public partial class AudioConsoleView : Control
             _service.ConfigureSources(sources.Select(source => new AudioSourceSettings(source.Device, source.VolumePercent))
                 .Append(new AudioSourceSettings(device)).ToArray());
             _status.Text = "Sorgente aggiunta al mix: " + device.Name;
+            ScheduleSetupSave();
         }
         catch (Exception error) { ShowError(error); }
     }
@@ -162,6 +208,7 @@ public partial class AudioConsoleView : Control
             _service.ConfigureSources(_service.GetSnapshot().Sources.Where(source => source.Device.Identity != identity)
                 .Select(source => new AudioSourceSettings(source.Device, source.VolumePercent)).ToArray());
             _status.Text = "Sorgente rimossa dal mix.";
+            ScheduleSetupSave();
         }
         catch (Exception error) { ShowError(error); }
     }
@@ -434,11 +481,18 @@ public partial class AudioConsoleView : Control
         if (what == NotificationWMCloseRequest) CloseRequested();
     }
 
-    public override void _ExitTree() => _service?.Dispose();
+    public override void _ExitTree()
+    {
+        try { SaveSetup(); }
+        finally { _service?.Dispose(); }
+    }
     private void ShowError(Exception error) => _status.Text = "Audio non disponibile: " + error.Message;
 
     private void BindControls()
     {
+        _setupSaveTimer = GetNode<Godot.Timer>("%SetupSaveTimer");
+        _setupSaveTimer.Timeout += SaveSetup;
+        _masterGain = GetNode<HSlider>("%VolumeSlider");
         _waveform = GetNode<WaveformView>("%WaveformDisplay/Trace");
         _devices = GetNode<OptionButton>("%SourceDeviceSelect");
         _sourceMode = GetNode<OptionButton>("%SourceMode");
@@ -484,10 +538,11 @@ public partial class AudioConsoleView : Control
         _record.Pressed += () => StartRecording();
         _stop.Pressed += StopRecording;
         _save.Pressed += OpenSaveDialog;
-        GetNode<HSlider>("%VolumeSlider").ValueChanged += value =>
+        _masterGain.ValueChanged += value =>
         {
             _service?.SetVolume(value);
             _volumeLabel.Text = $"{value:0}%";
+            ScheduleSetupSave();
         };
         _saveDialog.FileSelected += SaveWav;
         _saveDialog.Canceled += () => _saveTarget = null;
