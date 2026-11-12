@@ -17,7 +17,18 @@ void Throws<T>(Action action, string message) where T : Exception
 
 var output = Path.GetFullPath(Path.Combine(".artifacts", "tests"));
 Directory.CreateDirectory(output);
-if (args.Contains("--hardware"))
+if (args.Contains("--playback-hardware"))
+{
+    if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("WASAPI requires Windows.");
+    using var playback = new WasapiAudioPlayback();
+    playback.Play(Path.Combine(output, "silent.wav"));
+    Check(playback.IsPlaying, "WASAPI playback must start.");
+    await Task.Delay(1800);
+    Check(playback.Error == null, "WASAPI playback must not fail: " + playback.Error);
+    Check(!playback.IsPlaying, "Playback must finish automatically at end of file.");
+    playback.Stop();
+}
+else if (args.Contains("--hardware"))
 {
     if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("WASAPI requires Windows.");
     using var service = new AudioConsoleService(new WasapiAudioInput());
@@ -61,7 +72,8 @@ else
     Check(service.GetSnapshot().Waveform[0].High != 42, "Snapshots must not expose mutable service state.");
     Throws<InvalidOperationException>(() => service.SaveWav(Path.Combine(output, "running.wav")), "Cannot save while recording.");
     service.StopRecording();
-    Check(service.StartRecording() == RecordingStartResult.UnsavedRecording, "Unsaved take cannot be discarded implicitly.");
+    Check(service.GetSnapshot().Recordings.Length == 1 && !service.GetSnapshot().Recordings[0].IsExported,
+        "Stopped take must be kept in temporary history without exporting.");
     var fullPath = service.SaveWav(Path.Combine(output, "full.WAV"));
     Check(fullPath.EndsWith("full.WAV", StringComparison.Ordinal), "Uppercase extension must not be duplicated.");
     var full = File.ReadAllBytes(fullPath);
@@ -111,16 +123,63 @@ else
     source.Push(samples);
     Check(service.GetSnapshot().Elapsed == length, "Late callbacks from failed input must be ignored.");
     service.SelectInput("fake");
-    Check(service.StartRecording() == RecordingStartResult.UnsavedRecording, "Device reconnect preserves unsaved protection.");
-    Check(service.StartRecording(discardUnsaved: true) == RecordingStartResult.Started, "Explicit discard starts a new take.");
+    var retained = service.GetSnapshot().Recordings.Length;
+    Check(service.StartRecording() == RecordingStartResult.Started, "A new take preserves previous unsaved recordings.");
     service.StopRecording();
-    Check(!service.GetSnapshot().HasRecording, "A new empty take has no previous samples.");
+    Check(service.GetSnapshot().Recordings.Length == retained, "An empty take must not add or erase a history entry.");
     service.StartRecording();
     Parallel.For(0, 20, index => { source.Push(samples.AsMemory(0, 960)); service.GetSnapshot(); });
     service.StopRecording();
     Check(service.GetSnapshot().Elapsed.TotalSeconds == 0.2, "Concurrent callbacks and snapshots are serialized safely.");
     Check(!typeof(AudioConsoleService).Assembly.GetReferencedAssemblies().Any(reference => reference.Name!.Contains("Godot")),
         "Core DLL must not reference Godot.");
+
+    var historyRoot = Path.Combine(output, "history-" + Guid.NewGuid().ToString("N"));
+    var historyInput = new FakeInput();
+    var historyPlayback = new FakePlayback();
+    string? firstTemporary = null;
+    var preservedExport = Path.Combine(output, "preserved-export.wav");
+    using (var history = new AudioConsoleService(historyInput, historyPlayback, historyRoot))
+    {
+        history.SelectInput("fake");
+        history.StartRecording();
+        historyInput.Push(samples);
+        history.StopRecording();
+        history.PlaySelected();
+        firstTemporary = historyPlayback.Path;
+        Check(File.Exists(firstTemporary) && history.GetSnapshot().IsPlaying, "Unsaved take must play from a real temporary WAV.");
+        history.StopPlayback();
+        Check(!history.GetSnapshot().IsPlaying, "Stop playback must update state.");
+        history.SaveWav(preservedExport);
+        var firstId = history.GetSnapshot().SelectedRecordingId;
+        for (var i = 0; i < 10; i++)
+        {
+            history.StartRecording();
+            historyInput.Push(samples.AsMemory(0, 960));
+            history.StopRecording();
+        }
+        var state = history.GetSnapshot();
+        Check(state.Recordings.Length == 10 && state.Recordings.All(entry => entry.Id != firstId), "History retains exactly the newest ten takes.");
+        Check(!File.Exists(firstTemporary) && File.Exists(preservedExport), "Eviction removes only the temporary copy, never an exported WAV.");
+        Check(Directory.GetFiles(historyRoot, "*.wav", SearchOption.AllDirectories).Length == 10, "At most ten temporary WAV files remain.");
+        var older = state.Recordings[5];
+        history.SelectRecording(older.Id);
+        history.PlaySelected();
+        Check(history.GetSnapshot().SelectedRecordingId == older.Id && historyPlayback.IsPlaying, "Any older take can be selected and played.");
+        historyPlayback.Complete();
+        Check(!history.GetSnapshot().IsPlaying, "Natural playback completion is visible in snapshots.");
+        var olderPath = history.SaveWav(Path.Combine(output, "older.wav"));
+        Check(File.Exists(olderPath) && history.GetSnapshot().Recordings.Single(entry => entry.Id == older.Id).IsExported,
+            "Export updates only the selected history entry.");
+        history.PlaySelected();
+        history.StartRecording();
+        Check(!historyPlayback.IsPlaying, "Starting a recording stops playback before capture.");
+        Throws<InvalidOperationException>(() => history.PlaySelected(), "Cannot play while recording.");
+        Throws<InvalidOperationException>(() => history.SelectRecording(older.Id), "Cannot change selection while recording.");
+        history.StopRecording();
+    }
+    Check(Directory.GetFiles(historyRoot, "*.wav", SearchOption.AllDirectories).Length == 0 && File.Exists(preservedExport),
+        "Closing the session cleans temporary history and preserves exports.");
 }
 
 Console.WriteLine($"Audio console C# tests: {(failures == 0 ? "PASS" : "FAIL")} ({failures} failures)");
@@ -144,4 +203,20 @@ internal sealed class FakeInput : IAudioInput
     public void Push(ReadOnlyMemory<float> samples) => SamplesAvailable?.Invoke(samples);
     public void Fail(string message) => Failed?.Invoke(message);
     public void Dispose() { }
+}
+
+internal sealed class FakePlayback : IAudioPlayback
+{
+    public bool IsPlaying { get; private set; }
+    public string? Error => null;
+    public string? Path { get; private set; }
+    public void Play(string wavPath)
+    {
+        if (!File.Exists(wavPath)) throw new FileNotFoundException("Missing temporary recording.", wavPath);
+        Path = wavPath;
+        IsPlaying = true;
+    }
+    public void Stop() => IsPlaying = false;
+    public void Complete() => IsPlaying = false;
+    public void Dispose() => Stop();
 }

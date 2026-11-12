@@ -18,6 +18,7 @@ public partial class ConsoleUiSmoke : Node
             Check(view.GetNode<Panel>("%WaveformDisplay").GetNode<Control>("CenterLine") != null,
                 "Display background and center line must exist without runtime drawing.");
             view.AudioInputOverride = _input;
+            view.AudioPlaybackOverride = new SyntheticPlayback();
             AddChild(view);
             await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
             var buttons = view.FindChildren("*", "Button", true, false).OfType<Button>().ToArray();
@@ -35,9 +36,13 @@ public partial class ConsoleUiSmoke : Node
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             Check(!Button("Salva WAV").Disabled, "Stopped recording can be saved.");
             var confirmation = view.GetChildren().OfType<ConfirmationDialog>().Single(dialog => dialog is not FileDialog);
-            Press("Registra");
-            Check(confirmation.Visible, "Unsaved take requires confirmation.");
-            confirmation.Hide();
+            var list = view.GetNode<ItemList>("%RecordingList");
+            Check(list.ItemCount == 1 && list.GetItemText(0).Contains("Temporanea"), "Stopped take must appear in history before export.");
+            Press("Ascolta");
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(!Button("Ferma ascolto").Disabled, "Playback controls must reflect playback state.");
+            Press("Ferma ascolto");
             var dialog = view.GetChildren().OfType<FileDialog>().Single();
             var path = ProjectSettings.GlobalizePath("res://.godot/csharp-ui-test.wav");
             dialog.EmitSignal(FileDialog.SignalName.FileSelected, path);
@@ -45,6 +50,12 @@ public partial class ConsoleUiSmoke : Node
             Press("Registra");
             await ToSignal(GetTree().CreateTimer(0.2), SceneTreeTimer.SignalName.Timeout);
             Press("Stop");
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(list.ItemCount == 2, "A second take must preserve the previous one.");
+            list.EmitSignal(ItemList.SignalName.ItemSelected, 1L);
+            Press("Ascolta");
+            Press("Ferma ascolto");
             view.Notification((int)NotificationWMCloseRequest);
             Check(confirmation.Visible, "Closing with unsaved audio requires confirmation.");
             confirmation.Hide();
@@ -89,5 +100,18 @@ public partial class ConsoleUiSmoke : Node
                 samples[i] = (float)(Math.Sin(2 * Math.PI * 220 * _sampleIndex++ / 48000) * 0.25);
             SamplesAvailable?.Invoke(samples);
         }
+    }
+
+    private sealed class SyntheticPlayback : IAudioPlayback
+    {
+        public bool IsPlaying { get; private set; }
+        public string? Error => null;
+        public void Play(string wavPath)
+        {
+            Check(System.IO.File.Exists(wavPath), "Playback must use an existing temporary file.");
+            IsPlaying = true;
+        }
+        public void Stop() => IsPlaying = false;
+        public void Dispose() => Stop();
     }
 }

@@ -22,9 +22,9 @@ project/assembly_name="GodotAudioConsole"
 [display]
 
 window/size/viewport_width=840
-window/size/viewport_height=560
+window/size/viewport_height=800
 window/size/window_width_override=840
-window/size/window_height_override=560
+window/size/window_height_override=800
 window/size/min_width=640
 window/size/min_height=480
 window/stretch/mode="canvas_items"

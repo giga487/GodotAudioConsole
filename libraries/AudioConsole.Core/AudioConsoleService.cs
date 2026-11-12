@@ -12,22 +12,26 @@ public sealed class AudioConsoleService : IDisposable
 {
     private readonly object _gate = new();
     private readonly IAudioInput _input;
+    private readonly IAudioPlayback? _playback;
+    private readonly RecordingStore _recordings;
+    private Guid? _selectedRecordingId;
     private readonly WaveformPeak[] _waveform = new WaveformPeak[480];
     private readonly MemoryStream _pcm = new();
     private AudioFormat _format;
     private AudioFormat _recordedFormat;
-    private bool _inputAvailable, _isRecording, _unsaved, _disposed;
+    private bool _inputAvailable, _isRecording, _disposed;
     private double _volume = 100;
     private string? _inputError;
-    private long _recordingVersion;
     private int _waveIndex, _peakFrames, _channelIndex;
     private float _low, _high;
     private long _lastSignal, _lastClip;
     private long _recordedFrames;
 
-    public AudioConsoleService(IAudioInput input)
+    public AudioConsoleService(IAudioInput input, IAudioPlayback? playback = null, string? temporaryRoot = null)
     {
         _input = input ?? throw new ArgumentNullException(nameof(input));
+        _playback = playback;
+        _recordings = new RecordingStore(temporaryRoot);
         _input.SamplesAvailable += ReceiveSamples;
         _input.Failed += InputFailed;
     }
@@ -77,20 +81,19 @@ public sealed class AudioConsoleService : IDisposable
         lock (_gate) { ObjectDisposedException.ThrowIf(_disposed, this); _volume = percent; }
     }
 
-    public RecordingStartResult StartRecording(bool discardUnsaved = false)
+    public RecordingStartResult StartRecording()
     {
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_isRecording) return RecordingStartResult.AlreadyRecording;
             if (!_inputAvailable) return RecordingStartResult.NoInput;
-            if (_unsaved && !discardUnsaved) return RecordingStartResult.UnsavedRecording;
+            ArchivePendingLocked();
+            _playback?.Stop();
             _pcm.SetLength(0);
             _recordedFrames = 0;
             _recordedFormat = _format;
-            _recordingVersion++;
             _isRecording = true;
-            _unsaved = false;
             return RecordingStartResult.Started;
         }
     }
@@ -100,45 +103,63 @@ public sealed class AudioConsoleService : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (!_isRecording) return;
             _isRecording = false;
-            _unsaved = _pcm.Length > 0;
+            ArchivePendingLocked();
         }
     }
 
-    /// <summary>Writes a sibling temporary file, then replaces the destination on success.</summary>
+    private void ArchivePendingLocked()
+    {
+        if (_pcm.Length == 0) return;
+        var duration = TimeSpan.FromSeconds((double)_recordedFrames / _recordedFormat.SampleRate);
+        var entry = _recordings.Add(_recordedFormat, _pcm.GetBuffer().AsSpan(0, checked((int)_pcm.Length)), duration);
+        _selectedRecordingId = entry.Id;
+        _pcm.SetLength(0);
+    }
+
+    /// <summary>Exports the selected take without removing it from temporary history.</summary>
     public string SaveWav(string path)
     {
-        byte[] data;
-        AudioFormat format;
-        long version;
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (_isRecording || _pcm.Length == 0)
-                throw new InvalidOperationException("Stop a nonempty recording before saving.");
-            data = _pcm.ToArray();
-            format = _recordedFormat;
-            version = _recordingVersion;
+            if (_isRecording) throw new InvalidOperationException("Ferma la registrazione prima di salvare.");
+            ArchivePendingLocked();
+            return _recordings.Export(_selectedRecordingId ?? throw new InvalidOperationException("Seleziona una registrazione."), path);
         }
-        if (!string.Equals(Path.GetExtension(path), ".wav", StringComparison.OrdinalIgnoreCase)) path += ".wav";
-        path = Path.GetFullPath(path);
-        var temporary = Path.Combine(Path.GetDirectoryName(path)!, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
-        try
-        {
-            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write))
-                WavWriter.Write(stream, format, data);
-            File.Move(temporary, path, overwrite: true);
-        }
-        finally
-        {
-            if (File.Exists(temporary)) File.Delete(temporary);
-        }
+    }
+
+    public void SelectRecording(Guid id)
+    {
         lock (_gate)
         {
-            if (_recordingVersion == version) _unsaved = false;
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_isRecording) throw new InvalidOperationException("Ferma la registrazione prima di cambiare selezione.");
+            if (_recordings.Find(id) == null) throw new ArgumentException("Registrazione non disponibile.", nameof(id));
+            _playback?.Stop();
+            _selectedRecordingId = id;
         }
-        return path;
+    }
+
+    public void PlaySelected()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_isRecording) throw new InvalidOperationException("Ferma la registrazione prima dell'ascolto.");
+            if (_playback == null) throw new NotSupportedException("Riproduzione audio non disponibile.");
+            var id = _selectedRecordingId ?? throw new InvalidOperationException("Seleziona una registrazione.");
+            _playback.Play(_recordings.GetPath(id));
+        }
+    }
+
+    public void StopPlayback()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _playback?.Stop();
+        }
     }
 
     public ConsoleSnapshot GetSnapshot()
@@ -153,10 +174,15 @@ public sealed class AudioConsoleService : IDisposable
                 ? InputSignal.Clipping
                 : _lastSignal != 0 && Stopwatch.GetElapsedTime(_lastSignal, now).TotalSeconds < 3
                     ? InputSignal.Live : InputSignal.Quiet;
-            var elapsed = _recordedFormat.SampleRate > 0
+            var recordings = _recordings.GetRecordings();
+            var elapsed = (_isRecording || _pcm.Length > 0) && _recordedFormat.SampleRate > 0
                 ? TimeSpan.FromSeconds((double)_recordedFrames / _recordedFormat.SampleRate) : TimeSpan.Zero;
-            return new(_inputAvailable, _isRecording, _pcm.Length > 0, _unsaved,
-                _volume, elapsed, signal, _inputError, history);
+            var selected = _recordings.Find(_selectedRecordingId);
+            if (!_isRecording && _pcm.Length == 0) elapsed = selected?.Duration ?? TimeSpan.Zero;
+            return new(_inputAvailable, _isRecording, selected != null || _pcm.Length > 0,
+                _pcm.Length > 0 || recordings.Any(recording => !recording.IsExported),
+                _volume, elapsed, signal, _inputError, history, recordings, _selectedRecordingId,
+                _playback?.IsPlaying == true, _playback?.Error);
         }
     }
 
@@ -192,7 +218,6 @@ public sealed class AudioConsoleService : IDisposable
                 _peakFrames = 0;
                 _low = _high = 0;
             }
-            if (_isRecording && span.Length > 0) _unsaved = true;
         }
     }
 
@@ -202,8 +227,10 @@ public sealed class AudioConsoleService : IDisposable
         {
             if (_disposed) return;
             _inputAvailable = _isRecording = false;
-            _unsaved = _pcm.Length > 0;
             _inputError = message;
+            try { ArchivePendingLocked(); }
+            catch (IOException error) { _inputError += " • Copia temporanea non riuscita: " + error.Message; }
+            catch (UnauthorizedAccessException error) { _inputError += " • Copia temporanea non riuscita: " + error.Message; }
         }
     }
 
@@ -218,6 +245,8 @@ public sealed class AudioConsoleService : IDisposable
         _input.SamplesAvailable -= ReceiveSamples;
         _input.Failed -= InputFailed;
         _input.Dispose();
+        _playback?.Dispose();
+        _recordings.Dispose();
         _pcm.Dispose();
     }
 }

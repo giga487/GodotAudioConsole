@@ -21,9 +21,23 @@ public interface IAudioInput : IDisposable
     void Stop();
 }
 
+public interface IAudioPlayback : IDisposable
+{
+    bool IsPlaying { get; }
+    string? Error { get; }
+    void Play(string wavPath);
+    void Stop();
+}
+
+public sealed record RecordingInfo(Guid Id, string Name, DateTimeOffset CreatedAt,
+    TimeSpan Duration, string? ExportPath)
+{
+    public bool IsExported => ExportPath != null;
+}
+
 public readonly record struct WaveformPeak(float Low, float High);
 public enum InputSignal { Quiet, Live, Clipping }
-public enum RecordingStartResult { Started, AlreadyRecording, NoInput, UnsavedRecording }
+public enum RecordingStartResult { Started, AlreadyRecording, NoInput }
 
 /// <summary>An immutable copy, safe to consume from a UI thread.</summary>
 public sealed record ConsoleSnapshot(
@@ -35,4 +49,8 @@ public sealed record ConsoleSnapshot(
     TimeSpan Elapsed,
     InputSignal Signal,
     string? InputError,
-    WaveformPeak[] Waveform);
+    WaveformPeak[] Waveform,
+    RecordingInfo[] Recordings,
+    Guid? SelectedRecordingId,
+    bool IsPlaying,
+    string? PlaybackError);

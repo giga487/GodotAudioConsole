@@ -36,58 +36,64 @@ theme_override_constants/margin_top = 24
 theme_override_constants/margin_right = 24
 theme_override_constants/margin_bottom = 24
 
-[node name="ConsoleLayout" type="VBoxContainer" parent="Margin"]
+[node name="Scroll" type="ScrollContainer" parent="Margin"]
 layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="ConsoleLayout" type="VBoxContainer" parent="Margin/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 theme_override_constants/separation = 14
 
-[node name="Header" type="HBoxContainer" parent="Margin/ConsoleLayout"]
+[node name="Header" type="HBoxContainer" parent="Margin/Scroll/ConsoleLayout"]
 layout_mode = 2
 
-[node name="Title" type="Label" parent="Margin/ConsoleLayout/Header"]
+[node name="Title" type="Label" parent="Margin/Scroll/ConsoleLayout/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 20
 text = "AUDIO CONSOLE"
 
-[node name="SignalLabel" type="Label" parent="Margin/ConsoleLayout/Header"]
+[node name="SignalLabel" type="Label" parent="Margin/Scroll/ConsoleLayout/Header"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
 text = "INGRESSO LIVE"
 
-[node name="WaveformDisplay" parent="Margin/ConsoleLayout" instance=ExtResource("3_display")]
+[node name="WaveformDisplay" parent="Margin/Scroll/ConsoleLayout" instance=ExtResource("3_display")]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="MicrophoneRow" type="HBoxContainer" parent="Margin/ConsoleLayout"]
+[node name="MicrophoneRow" type="HBoxContainer" parent="Margin/Scroll/ConsoleLayout"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="MicrophoneLabel" type="Label" parent="Margin/ConsoleLayout/MicrophoneRow"]
+[node name="MicrophoneLabel" type="Label" parent="Margin/Scroll/ConsoleLayout/MicrophoneRow"]
 layout_mode = 2
 text = "Microfono"
 
-[node name="MicrophoneSelect" type="OptionButton" parent="Margin/ConsoleLayout/MicrophoneRow"]
+[node name="MicrophoneSelect" type="OptionButton" parent="Margin/Scroll/ConsoleLayout/MicrophoneRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Seleziona microfono"
 clip_text = true
 
-[node name="RefreshButton" type="Button" parent="Margin/ConsoleLayout/MicrophoneRow"]
+[node name="RefreshButton" type="Button" parent="Margin/Scroll/ConsoleLayout/MicrophoneRow"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Aggiorna"
 
-[node name="VolumeRow" type="HBoxContainer" parent="Margin/ConsoleLayout"]
+[node name="VolumeRow" type="HBoxContainer" parent="Margin/Scroll/ConsoleLayout"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="VolumeLabel" type="Label" parent="Margin/ConsoleLayout/VolumeRow"]
+[node name="VolumeLabel" type="Label" parent="Margin/Scroll/ConsoleLayout/VolumeRow"]
 layout_mode = 2
 text = "Volume registrazione"
 
-[node name="VolumeSlider" type="HSlider" parent="Margin/ConsoleLayout/VolumeRow"]
+[node name="VolumeSlider" type="HSlider" parent="Margin/Scroll/ConsoleLayout/VolumeRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 0)
 layout_mode = 2
@@ -96,36 +102,37 @@ tooltip_text = "100% = livello originale. Oltre 100% aumenta il guadagno."
 max_value = 200.0
 value = 100.0
 
-[node name="VolumeValue" type="Label" parent="Margin/ConsoleLayout/VolumeRow"]
+[node name="VolumeValue" type="Label" parent="Margin/Scroll/ConsoleLayout/VolumeRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(56, 0)
 layout_mode = 2
 text = "100%"
 horizontal_alignment = 2
 
-[node name="TransportRow" type="HBoxContainer" parent="Margin/ConsoleLayout"]
+[node name="TransportRow" type="HBoxContainer" parent="Margin/Scroll/ConsoleLayout"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="RecordButton" type="Button" parent="Margin/ConsoleLayout/TransportRow"]
+[node name="RecordButton" type="Button" parent="Margin/Scroll/ConsoleLayout/TransportRow"]
 unique_name_in_owner = true
 layout_mode = 2
 disabled = true
 text = "Registra"
 
-[node name="StopButton" type="Button" parent="Margin/ConsoleLayout/TransportRow"]
+[node name="StopButton" type="Button" parent="Margin/Scroll/ConsoleLayout/TransportRow"]
 unique_name_in_owner = true
 layout_mode = 2
 disabled = true
 text = "Stop"
 
-[node name="SaveButton" type="Button" parent="Margin/ConsoleLayout/TransportRow"]
+[node name="SaveButton" type="Button" parent="Margin/Scroll/ConsoleLayout/TransportRow"]
 unique_name_in_owner = true
 layout_mode = 2
 disabled = true
 text = "Salva WAV"
+tooltip_text = "Esporta la registrazione selezionata nella lista."
 
-[node name="ElapsedTime" type="Label" parent="Margin/ConsoleLayout/TransportRow"]
+[node name="ElapsedTime" type="Label" parent="Margin/Scroll/ConsoleLayout/TransportRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -133,12 +140,65 @@ theme_override_font_sizes/font_size = 26
 text = "00:00.0"
 horizontal_alignment = 2
 
-[node name="StatusLabel" type="Label" parent="Margin/ConsoleLayout"]
+[node name="StatusLabel" type="Label" parent="Margin/Scroll/ConsoleLayout"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 theme_override_font_sizes/font_size = 15
 text = "Pronto. Seleziona il microfono e premi Registra."
+autowrap_mode = 3
+
+[node name="HistorySection" type="VBoxContainer" parent="Margin/Scroll/ConsoleLayout"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HistoryHeader" type="HBoxContainer" parent="Margin/Scroll/ConsoleLayout/HistorySection"]
+layout_mode = 2
+
+[node name="HistoryTitle" type="Label" parent="Margin/Scroll/ConsoleLayout/HistorySection/HistoryHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "ULTIME REGISTRAZIONI"
+theme_override_font_sizes/font_size = 15
+
+[node name="HistoryCount" type="Label" parent="Margin/Scroll/ConsoleLayout/HistorySection/HistoryHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0 / 10"
+
+[node name="EmptyHistory" type="Label" parent="Margin/Scroll/ConsoleLayout/HistorySection"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "Le registrazioni compaiono qui quando premi Stop."
+
+[node name="RecordingList" type="ItemList" parent="Margin/Scroll/ConsoleLayout/HistorySection"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 116)
+layout_mode = 2
+size_flags_horizontal = 3
+allow_reselect = true
+
+[node name="PlaybackRow" type="HBoxContainer" parent="Margin/Scroll/ConsoleLayout/HistorySection"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PlayButton" type="Button" parent="Margin/Scroll/ConsoleLayout/HistorySection/PlaybackRow"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "Ascolta"
+
+[node name="StopPlaybackButton" type="Button" parent="Margin/Scroll/ConsoleLayout/HistorySection/PlaybackRow"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "Ferma ascolto"
+
+[node name="HistoryHint" type="Label" parent="Margin/Scroll/ConsoleLayout/HistorySection"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+text = "Temporanee per questa sessione: la più vecchia viene rimossa oltre 10."
 autowrap_mode = 3
 
 [node name="SaveDialog" type="FileDialog" parent="."]
@@ -152,7 +212,7 @@ use_native_dialog = true
 
 [node name="DiscardDialog" type="ConfirmationDialog" parent="."]
 unique_name_in_owner = true
-title = "Registrazione non salvata"
-dialog_text = "La registrazione non è salvata. Vuoi scartarla?"
-ok_button_text = "Scarta"
+title = "Registrazioni temporanee"
+dialog_text = "Ci sono registrazioni non esportate. Chiudendo perderai le copie temporanee. Vuoi uscire?"
+ok_button_text = "Esci"
 cancel_button_text = "Annulla"
