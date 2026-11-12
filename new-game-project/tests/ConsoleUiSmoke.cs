@@ -104,6 +104,29 @@ public partial class ConsoleUiSmoke : Node
             await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
             Check(_redirect.IsActive && _redirect.SamplesReceived && _input.IsRunning && !Button("RedirectStop").Disabled,
                 "Live send keeps capture running and forwards mixed samples.");
+            var eqPanel = view.GetNode<Control>("%EqualizerPanel");
+            var eqEnabled = eqPanel.GetNode<CheckBox>("Header/Enabled");
+            Check(!eqEnabled.ButtonPressed && eqPanel.GetNode<HSlider>("Bands/Bass").Value == 0,
+                "Static EQ panel starts flat and bypassed.");
+            eqEnabled.ButtonPressed = true;
+            eqPanel.GetNode<HSlider>("Bands/Bass").Value = 4;
+            eqPanel.GetNode<HSlider>("Bands/Mid").Value = -3;
+            eqPanel.GetNode<HSlider>("Bands/Treble").Value = 2;
+            eqPanel.GetNode<HSlider>("Bands/Output").Value = -6;
+            await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
+            Check(_redirect.IsActive && _input.IsRunning && Button("StopButton").Disabled &&
+                eqPanel.GetNode<Label>("Bands/BassValue").Text.Contains("4.0"),
+                "EQ controls update during live sending without starting a recording.");
+            if (DisplayServer.GetName() != "headless")
+            {
+                await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+                GetViewport().GetTexture().GetImage().SavePng("res://.godot/equalizer-preview.png");
+            }
+            eqPanel.GetNode<Button>("Header/Reset").EmitSignal(BaseButton.SignalName.Pressed);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(eqPanel.GetNode<HSlider>("Bands/Bass").Value == 0 && eqEnabled.ButtonPressed,
+                "EQ reset restores flat gain while preserving enabled state.");
+            eqEnabled.ButtonPressed = false;
             Press("RedirectStop");
             redirectMode.Select(1);
             redirectMode.EmitSignal(OptionButton.SignalName.ItemSelected, 1L);
@@ -238,10 +261,16 @@ public partial class ConsoleUiSmoke : Node
             }
             view.GetNode<HSlider>("%VolumeSlider").Value = 67;
             sourceRows.GetChildren().OfType<AudioSourceStripView>().First().GetNode<HSlider>("Gain").Value = 35;
+            eqEnabled.ButtonPressed = true;
+            eqPanel.GetNode<HSlider>("Bands/Bass").Value = -4;
+            eqPanel.GetNode<HSlider>("Bands/Mid").Value = 2;
+            eqPanel.GetNode<HSlider>("Bands/Treble").Value = 3;
+            eqPanel.GetNode<HSlider>("Bands/Output").Value = -3;
             view.Free(); // Exit must flush changes even when the debounce timer has not elapsed.
             var saved = new LastSetupStore(setupPath).Load()!;
             Check(saved.Sources.Length == 2 && saved.MasterVolumePercent == 67 && saved.Sources[0].VolumePercent == 35,
                 "Closing the UI persists the complete last setup.");
+            Check(saved.Equalizer == new EqualizerSettings(true, -4, 2, 3, -3), "Closing persists every EQ control.");
             AudioConsoleView Reopen()
             {
                 var reopened = GD.Load<PackedScene>("res://scenes/audio_console.tscn").Instantiate<AudioConsoleView>();
@@ -256,6 +285,11 @@ public partial class ConsoleUiSmoke : Node
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             var restoredRows = restored.GetNode<VBoxContainer>("%SourceRows");
+            var restoredEq = restored.GetNode<Control>("%EqualizerPanel");
+            Check(restoredEq.GetNode<CheckBox>("Header/Enabled").ButtonPressed &&
+                restoredEq.GetNode<HSlider>("Bands/Bass").Value == -4 && restoredEq.GetNode<HSlider>("Bands/Mid").Value == 2 &&
+                restoredEq.GetNode<HSlider>("Bands/Treble").Value == 3 && restoredEq.GetNode<HSlider>("Bands/Output").Value == -3,
+                "All EQ controls restore on reopening the UI.");
             Check(restored.GetNode<OptionButton>("%RedirectDevice").Selected == 1 &&
                 restored.GetNode<OptionButton>("%RedirectMode").Selected == 1 && restored.GetNode<Button>("%RedirectStop").Disabled,
                 "Routing choices restore without restarting transmission.");

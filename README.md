@@ -176,6 +176,33 @@ Le registrazioni temporanee e la cronologia non sono incluse nel JSON.
 Lettura, validazione, scrittura e risoluzione dei dispositivi sono in
 `AudioConsole.Core/LastSetupStore.cs`; Godot collega soltanto avvio, timer e chiusura.
 
+## Equalizzatore della voce e del mix dal vivo
+
+Il pannello statico **Equalizzatore • Mix live** offre bassi (shelf 160 Hz), medi
+(picco 1 kHz, Q 0.7), alti (shelf 4 kHz) e **Uscita EQ**, tutti da -12 a +12 dB.
+Con **Attivo** abiliti l'effetto; disattivalo per confrontare il suono originale.
+**Reset** riporta i quattro valori a 0 dB senza cambiare l'attivazione.
+
+Per provare la voce senza registrare: lascia solo il microfono tra le sorgenti,
+attiva l'EQ e avvia **Mix dal vivo** nel pannello di invio. Usa il cavo virtuale
+come microfono nell'altra applicazione, oppure scegli delle cuffie come uscita
+per ascoltarti. Con più sorgenti l'EQ modifica l'intero mix, compreso l'audio PC.
+I comandi sono modificabili durante l'invio e durante REC.
+
+Il percorso è **sorgenti → volumi sorgenti → somma → EQ → volume mix →
+controllo picchi e saturazione → invio / nuova registrazione**. Se compare PICCO,
+riduci Uscita EQ o Volume mix. Il volume di uscita dell'EQ è escluso in bypass.
+Le registrazioni già presenti conservano il loro suono, anche durante l'ascolto
+o l'invio del file: non vengono equalizzate una seconda volta.
+
+L'elaborazione è in `AudioConsole.Core/VoiceEqualizer.cs`, senza Godot o NAudio.
+Le formule dei filtri biquad seguono l'[Audio EQ Cookbook del W3C](https://www.w3.org/TR/audio-eq-cookbook/).
+Ogni canale ha stati separati; le regolazioni e il bypass effettuano transizioni
+graduali, e lo stato dei filtri viene azzerato alla riapertura degli ingressi.
+Il pannello è modificabile in `new-game-project/scenes/equalizer_panel.tscn`.
+Tutti i valori e l'attivazione vengono salvati nel last setup; i vecchi JSON senza
+EQ restano compatibili e vengono caricati con EQ disattivato e valori a zero.
+
 ## Invio a un microfono virtuale
 
 Il pannello **Invia a un microfono virtuale** offre due modalità alternative:
@@ -231,6 +258,10 @@ Verificano anche somma stereo, guadagni separati, silenzio in mancanza di dati,
 alias duplicati, clock del mix, sospensione di tutte le sorgenti e ripristino dopo errori.
 Verificano anche lettura/scrittura JSON, volumi ripristinati, setup vuoto, dispositivi
 mancanti o non apribili, file corrotto/versione errata e conservazione del file precedente.
+Per l'EQ controllano risposta in dB di ogni banda, bypass, guadagno di uscita,
+canali indipendenti, frequenze di campionamento diverse, transizioni, valori non
+validi, invio senza REC e identità del segnale inviato e registrato. Verificano
+anche persistenza EQ e compatibilità con i setup precedenti.
 Sono un eseguibile di test senza dipendenze da un framework di test esterno;
 restituiscono codice 0 quando tutti i controlli passano.
 

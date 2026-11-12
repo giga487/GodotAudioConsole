@@ -13,6 +13,7 @@ public sealed partial class AudioConsoleService : IDisposable
     private readonly object _gate = new();
     private readonly IAudioInput _input;
     private readonly IAudioPlayback? _playback;
+    private readonly VoiceEqualizer _equalizer = new();
     private readonly RecordingStore _recordings;
     private Guid? _selectedRecordingId;
     private string? _selectedInputId;
@@ -105,6 +106,7 @@ public sealed partial class AudioConsoleService : IDisposable
                 // Start callbacks wait for this lock until the format is initialized.
                 _format = _input.Start(deviceId);
                 _format.Validate();
+                _equalizer.Reset(_format);
                 _inputAvailable = true;
                 _selectedInputId = deviceId;
                 _inputError = null;
@@ -126,6 +128,11 @@ public sealed partial class AudioConsoleService : IDisposable
         if (!double.IsFinite(percent) || percent is < 0 or > 200)
             throw new ArgumentOutOfRangeException(nameof(percent));
         lock (_gate) { ObjectDisposedException.ThrowIf(_disposed, this); _volume = percent; }
+    }
+
+    public void SetEqualizer(EqualizerSettings settings)
+    {
+        lock (_gate) { ObjectDisposedException.ThrowIf(_disposed, this); _equalizer.Configure(settings); }
     }
 
     public RecordingStartResult StartRecording()
@@ -323,6 +330,7 @@ public sealed partial class AudioConsoleService : IDisposable
             {
                 _format = _input.Start(_selectedInputId);
                 _format.Validate();
+                _equalizer.Reset(_format);
                 _inputError = null;
                 _channelIndex = _peakFrames = 0;
                 _low = _high = 0;
@@ -367,7 +375,8 @@ public sealed partial class AudioConsoleService : IDisposable
                 _volume, elapsed, signal, _inputError, history, recordings, _selectedRecordingId,
                 playing, _playback?.IsPaused == true, _playback?.Error, _inputSuspended, editor,
                 (_input as IMultiSourceAudioInput)?.GetSources() ?? [],
-                new(_redirectMode, _redirectDestination, _redirectActive, sendingFile ? _selectedRecordingId : null, _redirectError));
+                new(_redirectMode, _redirectDestination, _redirectActive, sendingFile ? _selectedRecordingId : null, _redirectError),
+                _equalizer.Settings);
         }
     }
 
@@ -384,7 +393,7 @@ public sealed partial class AudioConsoleService : IDisposable
             var sampleIndex = 0;
             foreach (var source in span)
             {
-                var value = float.IsFinite(source) ? source * gain : 0;
+                var value = _equalizer.ProcessSample(source, _channelIndex) * gain;
                 if (Math.Abs(value) > 0.0001f) _lastSignal = Stopwatch.GetTimestamp();
                 if (Math.Abs(value) >= 0.99f) _lastClip = Stopwatch.GetTimestamp();
                 value = Math.Clamp(value, -1, 1);

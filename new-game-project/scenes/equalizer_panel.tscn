@@ -1,0 +1,115 @@
+[gd_scene format=3]
+
+[node name="EqualizerPanel" type="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Header" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 15
+text = "EQUALIZZATORE • MIX LIVE"
+
+[node name="Enabled" type="CheckBox" parent="Header"]
+layout_mode = 2
+text = "Attivo"
+tooltip_text = "Disattiva per confrontare il suono originale (bypass)."
+
+[node name="Reset" type="Button" parent="Header"]
+layout_mode = 2
+text = "Reset"
+tooltip_text = "Riporta tutte le regolazioni a 0 dB."
+
+[node name="Bands" type="GridContainer" parent="."]
+layout_mode = 2
+columns = 6
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 6
+
+[node name="BassLabel" type="Label" parent="Bands"]
+layout_mode = 2
+text = "Bassi"
+tooltip_text = "160 Hz • corpo e calore della voce."
+
+[node name="Bass" type="HSlider" parent="Bands"]
+layout_mode = 2
+custom_minimum_size = Vector2(70, 24)
+size_flags_horizontal = 3
+min_value = -12.0
+max_value = 12.0
+step = 0.5
+tooltip_text = "Bassi • 160 Hz • da -12 a +12 dB"
+
+[node name="BassValue" type="Label" parent="Bands"]
+layout_mode = 2
+custom_minimum_size = Vector2(68, 0)
+horizontal_alignment = 2
+text = "0.0 dB"
+
+[node name="MidLabel" type="Label" parent="Bands"]
+layout_mode = 2
+text = "Medi"
+tooltip_text = "1 kHz • presenza della voce."
+
+[node name="Mid" type="HSlider" parent="Bands"]
+layout_mode = 2
+custom_minimum_size = Vector2(70, 24)
+size_flags_horizontal = 3
+min_value = -12.0
+max_value = 12.0
+step = 0.5
+tooltip_text = "Medi • 1 kHz • da -12 a +12 dB"
+
+[node name="MidValue" type="Label" parent="Bands"]
+layout_mode = 2
+custom_minimum_size = Vector2(68, 0)
+horizontal_alignment = 2
+text = "0.0 dB"
+
+[node name="TrebleLabel" type="Label" parent="Bands"]
+layout_mode = 2
+text = "Alti"
+tooltip_text = "4 kHz • brillantezza e definizione."
+
+[node name="Treble" type="HSlider" parent="Bands"]
+layout_mode = 2
+custom_minimum_size = Vector2(70, 24)
+size_flags_horizontal = 3
+min_value = -12.0
+max_value = 12.0
+step = 0.5
+tooltip_text = "Alti • 4 kHz • da -12 a +12 dB"
+
+[node name="TrebleValue" type="Label" parent="Bands"]
+layout_mode = 2
+custom_minimum_size = Vector2(68, 0)
+horizontal_alignment = 2
+text = "0.0 dB"
+
+[node name="OutputLabel" type="Label" parent="Bands"]
+layout_mode = 2
+text = "Uscita EQ"
+
+[node name="Output" type="HSlider" parent="Bands"]
+layout_mode = 2
+custom_minimum_size = Vector2(70, 24)
+size_flags_horizontal = 3
+min_value = -12.0
+max_value = 12.0
+step = 0.5
+tooltip_text = "Compensa il volume dopo l'EQ • da -12 a +12 dB"
+
+[node name="OutputValue" type="Label" parent="Bands"]
+layout_mode = 2
+custom_minimum_size = Vector2(68, 0)
+horizontal_alignment = 2
+text = "0.0 dB"
+
+[node name="Hint" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+autowrap_mode = 3
+text = "Mix live, anche senza REC. I file esistenti non cambiano. Riduci Uscita EQ se compare PICCO."

@@ -119,6 +119,7 @@ public partial class AudioConsoleView : Control
         _waveform.ShowHistory(state.Waveform);
         RenderEditor(state);
         RenderSources(state);
+        RenderEqualizer(state.Equalizer);
         RenderRedirect(state);
         _record.Disabled = !state.InputAvailable || state.IsRecording;
         _stop.Disabled = !state.IsRecording;
@@ -495,6 +496,7 @@ public partial class AudioConsoleView : Control
 
     private void BindControls()
     {
+        BindEqualizerControls();
         BindRedirectControls();
         _setupSaveTimer = GetNode<Godot.Timer>("%SetupSaveTimer");
         _setupSaveTimer.Timeout += SaveSetup;

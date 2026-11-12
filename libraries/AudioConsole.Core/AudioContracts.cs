@@ -97,4 +97,5 @@ public sealed record ConsoleSnapshot(
     bool IsInputSuspended,
     RecordingEditorSnapshot? Editor,
     AudioSourceState[] Sources,
-    AudioRedirectState Redirect);
+    AudioRedirectState Redirect,
+    EqualizerSettings Equalizer);
