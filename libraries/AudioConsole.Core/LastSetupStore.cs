@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace AudioConsole.Core;
 
 public sealed record LastSetup(int Version, double MasterVolumePercent, AudioSourceSettings[] Sources,
-    AudioRedirectSettings? Redirect = null, EqualizerSettings? Equalizer = null, EchoSettings? Echo = null);
+    AudioRedirectSettings? Redirect = null, EqualizerSettings? Equalizer = null, EchoSettings? Echo = null, LoopSettings? Loop = null);
 public sealed record SetupRestoreResult(int RestoredCount, string[] Warnings);
 
 /// <summary>Versioned device/gain settings only: no recordings, playback or Godot objects.</summary>
@@ -26,7 +26,7 @@ public sealed class LastSetupStore
 
     public static LastSetup Capture(ConsoleSnapshot state) => new(CurrentVersion, state.VolumePercent,
         state.Sources.Select(source => new AudioSourceSettings(source.Device, source.VolumePercent)).ToArray(),
-        new(state.Redirect.Mode, state.Redirect.Destination), state.Equalizer, state.Echo);
+        new(state.Redirect.Mode, state.Redirect.Destination), state.Equalizer, state.Echo, state.Loops.Settings);
 
     public LastSetup? Load()
     {
@@ -65,6 +65,7 @@ public sealed class LastSetupStore
         StereoMixer.ValidateGain(setup.MasterVolumePercent);
         setup.Equalizer?.Validate();
         setup.Echo?.Validate();
+        setup.Loop?.Validate();
         if (setup.Sources == null) throw new InvalidDataException("Lista delle sorgenti mancante.");
         if (setup.Redirect != null && (!Enum.IsDefined(setup.Redirect.Mode) ||
             setup.Redirect.Destination != null && string.IsNullOrWhiteSpace(setup.Redirect.Destination.Id)))
@@ -87,6 +88,7 @@ public sealed class LastSetupStore
         var warnings = new List<string>();
         service.SetEqualizer(setup.Equalizer ?? new());
         service.SetEcho(setup.Echo ?? new());
+        service.SetLoopSettings(setup.Loop ?? new());
         if (setup.Redirect != null)
         {
             try

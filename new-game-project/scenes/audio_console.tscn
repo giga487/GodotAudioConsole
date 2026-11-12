@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://scripts/AudioConsoleView.cs" id="1_console"]
 [ext_resource type="Theme" path="res://themes/console_theme.tres" id="2_theme"]
@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" path="res://scenes/audio_source_strip.tscn" id="9_source_strip"]
 [ext_resource type="PackedScene" path="res://scenes/equalizer_panel.tscn" id="10_equalizer"]
 [ext_resource type="PackedScene" path="res://scenes/echo_panel.tscn" id="11_echo"]
+[ext_resource type="PackedScene" path="res://scenes/loop_panel.tscn" id="12_loop"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBox_Effects"]
 bg_color = Color(0.19, 0.19, 0.19, 1)
@@ -52,7 +53,7 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_right = -408.0
+offset_right = -744.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/margin_left = 24
@@ -87,6 +88,14 @@ text = "Effetti"
 toggle_mode = true
 button_pressed = true
 tooltip_text = "Apri o chiudi il pannello effetti. Gli effetti attivi continuano a funzionare."
+
+[node name="LoopsToggle" type="Button" parent="Margin/MainColumn/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Loop"
+toggle_mode = true
+button_pressed = true
+tooltip_text = "Apri o chiudi la lista loop senza interrompere l'audio"
 
 [node name="Scroll" type="ScrollContainer" parent="Margin/MainColumn"]
 layout_mode = 2
@@ -389,9 +398,9 @@ layout_mode = 1
 anchor_left = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -384.0
+offset_left = -720.0
 offset_top = 24.0
-offset_right = -24.0
+offset_right = -360.0
 offset_bottom = -24.0
 grow_horizontal = 0
 grow_vertical = 2
@@ -450,6 +459,69 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 
+[node name="LoopsSidebar" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -344.0
+offset_top = 24.0
+offset_right = -24.0
+offset_bottom = -24.0
+grow_horizontal = 0
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBox_Effects")
+
+[node name="Margin" type="MarginContainer" parent="LoopsSidebar"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="Content" type="VBoxContainer" parent="LoopsSidebar/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="LoopsSidebar/Margin/Content"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="LoopsSidebar/Margin/Content/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = "LOOP"
+
+[node name="CloseLoops" type="Button" parent="LoopsSidebar/Margin/Content/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "×"
+tooltip_text = "Chiudi pannello Loop senza fermare la ripetizione"
+
+[node name="Scroll" type="ScrollContainer" parent="LoopsSidebar/Margin/Content"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ContentMargin" type="MarginContainer" parent="LoopsSidebar/Margin/Content/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_right = 8
+
+[node name="LoopPanel" parent="LoopsSidebar/Margin/Content/Scroll/ContentMargin" instance=ExtResource("12_loop")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="LoopSaveDialog" type="FileDialog" parent="LoopsSidebar"]
+unique_name_in_owner = true
+title = "Salva clip loop WAV"
+size = Vector2i(672, 448)
+file_mode = 4
+access = 2
+filters = PackedStringArray("*.wav ; Audio WAV")
+use_native_dialog = true
+
 [node name="SaveDialog" type="FileDialog" parent="."]
 unique_name_in_owner = true
 title = "Salva registrazione WAV"
@@ -478,7 +550,7 @@ item_4/id = 4
 [node name="DiscardDialog" type="ConfirmationDialog" parent="."]
 unique_name_in_owner = true
 title = "Registrazioni temporanee"
-dialog_text = "Ci sono registrazioni non esportate. Chiudendo perderai le copie temporanee. Vuoi uscire?"
+dialog_text = "Ci sono registrazioni o clip loop non esportate. Chiudendo perderai le copie temporanee. Vuoi uscire?"
 ok_button_text = "Esci"
 cancel_button_text = "Annulla"
 

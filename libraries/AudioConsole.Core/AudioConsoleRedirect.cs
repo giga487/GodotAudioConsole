@@ -40,7 +40,7 @@ public sealed partial class AudioConsoleService
                 CheckFeedback((_input as IMultiSourceAudioInput)?.GetSources().Select(s => s.Device.Identity)
                     ?? new[] { _selectedInputId! });
             }
-            else if (_isRecording || _selectedRecordingId == null)
+            else if (_isRecording || _loops.IsRecording || _selectedRecordingId == null)
                 throw new InvalidOperationException("Ferma la registrazione e seleziona una voce nella lista.");
         }
         StopRedirect();
@@ -49,7 +49,7 @@ public sealed partial class AudioConsoleService
         {
             if (_redirectMode == AudioRedirectMode.SelectedRecording)
             {
-                lock (_gate) { _inputSuspended = true; Array.Clear(_waveform); _lastSignal = _lastClip = 0; }
+                lock (_gate) { _loops.Stop(); _inputSuspended = true; Array.Clear(_waveform); _lastSignal = _lastClip = 0; }
                 _input.Stop();
             }
             lock (_gate)

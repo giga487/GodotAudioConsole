@@ -20,6 +20,7 @@ Directory.CreateDirectory(output);
 RedirectTests.Run(output, Check);
 EqualizerTests.Run(output, Check);
 EchoTests.Run(output, Check);
+LoopTests.Run(output, Check);
 if (args.Contains("--redirect-hardware"))
 {
     await RedirectHardwareTest.Run(output, Check);

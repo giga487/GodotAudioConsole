@@ -7,7 +7,7 @@ Il backend audio attuale usa WASAPI e richiede **Windows**.
 
 | Progetto | Responsabilità | Dipendenze |
 | --- | --- | --- |
-| `libraries/AudioConsole.Core` | Mixer multisorgente, EQ, Echo, ultimo setup JSON, guadagni, buffer/clock, PCM, timeline, ritaglio, cronologia, ascolto ed esportazione WAV | Solo libreria standard .NET |
+| `libraries/AudioConsole.Core` | Mixer multisorgente, EQ, Echo, banco Loop, ultimo setup JSON, guadagni, buffer/clock, PCM, timeline, ritaglio, cronologia, ascolto ed esportazione WAV | Solo libreria standard .NET |
 | `libraries/AudioConsole.Windows` | Microfoni, cattura dell'uscita PC (loopback), riproduzione WASAPI, conversione campioni | Core e NAudio.Wasapi 2.2.1 |
 | `new-game-project` | Controlli, disegno, finestre, conferme e traduzione dei comandi utente | Core, Windows e Godot |
 | `tests/AudioConsole.Tests` | Test applicativi senza motore e prova hardware opzionale | Core e Windows |
@@ -45,6 +45,8 @@ L'interfaccia è definita in risorse Godot, visibili anche senza avviare il prog
   sorgente attiva, con nome, livello, volume e rimozione.
 - `new-game-project/scenes/equalizer_panel.tscn` ed `echo_panel.tscn`: controlli
   degli effetti ospitati nel pannello destro, modificabili nelle rispettive scene.
+- `new-game-project/scenes/loop_panel.tscn`: registrazione clip, lista Loop,
+  riproduzione, volume, pausa e salvataggio nella colonna accanto a Effetti.
 - `new-game-project/themes/console_theme.tres`: font, colori e stili dei pulsanti.
 
 Apri la scena principale nella vista 2D per modificarne i nodi e le proprietà
@@ -241,6 +243,46 @@ caricato con l'effetto disattivato. L'invio non si avvia automaticamente.
 L'elaborazione è in `AudioConsole.Core/VoiceEcho.cs`, senza dipendenze da Godot;
 il layout statico è in `new-game-project/scenes/echo_panel.tscn`.
 
+## Banco Loop: registra una clip e ripetila insieme alla voce
+
+La colonna **Loop** è separata da **Effetti**. La finestra iniziale è larga 1660 px
+per mostrare console, Effetti e Loop. Puoi chiudere ciascuna colonna con **×** e
+riaprirla dal pulsante nell'intestazione: l'audio continua. Nelle finestre meno
+larghe si apre una colonna per volta, e nelle più strette si sovrappone alla
+console. **Esc** o un clic sullo sfondo oscurato chiudono i pannelli aperti.
+
+1. Aggiungi il microfono o le sorgenti desiderate al mix.
+2. Nella colonna Loop premi **●**, parla e premi **■** accanto al pulsante REC:
+   la nuova clip compare nella lista dedicata, senza aggiungere una registrazione
+   alla cronologia principale.
+3. Seleziona una clip e imposta il suo **Volume** (0–200%) e la **Pausa** (0–300 s).
+   La pausa è l'attesa tra fine clip e nuova ripartenza: con clip da 3 s e pausa
+   da 2 s un nuovo giro parte ogni 5 s. **0 s** significa ripetizione continua.
+4. Premi **▶** nella colonna Loop. Il microfono resta attivo: voce e loop vengono
+   sommati, con guadagno separato per il loop.
+5. Per ascoltare o trasmettere scegli **Mix dal vivo** nel pannello di invio e
+   avvia **▶** verso cuffie oppure CABLE Input; nell'altra app usa CABLE Output.
+   **■** nella colonna Loop ferma soltanto la clip, lasciando passare la voce.
+
+La lista contiene **al massimo 10 clip temporanee per sessione**; l'undicesima
+sostituisce la più vecchia. Ogni clip conserva volume e pausa durante la sessione.
+**Salva WAV** conserva una copia esterna: la pulizia dei temporanei non la elimina.
+Alla chiusura l'app segnala anche le clip Loop non esportate. Le clip non vengono
+ricaricate all'avvio; il last setup salva i valori di volume e pausa, senza audio
+e senza avviare registrazioni, loop o invio.
+
+REC Loop acquisisce le sorgenti live **dopo EQ/Echo e prima del Volume mix**;
+all'avvio ferma il loop precedente e non lo registra nella nuova clip. La clip
+viene riprodotta dopo gli effetti, evitando di applicarli di nuovo a ogni giro.
+Il Volume mix regola poi voce e loop insieme. REC della console principale può
+registrare il risultato completo, anche mentre il loop gira. Un riascolto di file
+o l'invio di una registrazione ferma il loop; tornando al live non riparte da solo.
+
+Il player usa il clock dei campioni, non un timer grafico; supporta mono/stereo,
+ricampionamento quando cambia il formato dell'ingresso, transizioni ai bordi e
+regolazioni del volume graduali. Un cambio della pausa vale dal giro successivo.
+La logica è in `AudioConsole.Core/LoopBank.cs` e `AudioConsoleLoops.cs`.
+
 ## Invio a un microfono virtuale
 
 Il pannello **Invia a un microfono virtuale** offre due modalità alternative:
@@ -305,6 +347,11 @@ canali indipendenti, feedback massimo, bypass e cancellazione della coda,
 transizioni, sample rate diversi, invio senza REC, PCM registrato identico al
 segnale inviato, file originali invariati e ripristino del setup. Il test UI
 verifica anche avvio, regolazioni, reset e persistenza del pannello Echo.
+Per Loop verificano cattura indipendente, somma con la voce, volume, pausa e
+ripetizione continua, limite di dieci clip, esportazione, pulizia, disconnessione,
+salvataggio impostazioni e conversione mono/stereo con clock stabile. Il test UI
+copre la terza colonna, REC/STOP/PLAY, invio simultaneo, export e chiusura senza
+interrompere il loop; salva `.godot/loop-bank-preview.png` nella prova grafica.
 Sono un eseguibile di test senza dipendenze da un framework di test esterno;
 restituiscono codice 0 quando tutti i controlli passano.
 

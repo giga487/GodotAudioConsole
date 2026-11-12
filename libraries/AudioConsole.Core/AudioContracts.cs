@@ -99,4 +99,5 @@ public sealed record ConsoleSnapshot(
     AudioSourceState[] Sources,
     AudioRedirectState Redirect,
     EqualizerSettings Equalizer,
-    EchoSettings Echo);
+    EchoSettings Echo,
+    LoopSnapshot Loops);

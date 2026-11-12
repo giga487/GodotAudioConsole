@@ -189,6 +189,55 @@ public partial class ConsoleUiSmoke : Node
                 echoPanel.GetNode<HSlider>("Parameters/Feedback").Value == 35 && echoPanel.GetNode<HSlider>("Parameters/Amount").Value == 30,
                 "Echo reset restores default parameters while preserving enabled state.");
             echoEnabled.ButtonPressed = false;
+            view.Size = new Vector2(1660, 900);
+            Button("LoopsToggle").ButtonPressed = true;
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            var loopSidebar = view.GetNode<Control>("%LoopsSidebar");
+            var loopPanel = view.GetNode<Control>("%LoopPanel");
+            void LoopPress(string path) => loopPanel.GetNode<Button>(path).EmitSignal(BaseButton.SignalName.Pressed);
+            var loopList = loopPanel.GetNode<ItemList>("Clips");
+            Check(loopSidebar.Visible && sidebar.Visible && loopSidebar.GetGlobalRect().Position.X > sidebar.GetGlobalRect().End.X,
+                "Wide layouts show a separate Loop column alongside Effects.");
+            var originalHistoryCount = list.ItemCount;
+            LoopPress("RecordRow/Record");
+            await ToSignal(GetTree().CreateTimer(0.25), SceneTreeTimer.SignalName.Timeout);
+            Check(sourceMode.Disabled && !loopPanel.GetNode<Button>("RecordRow/StopRecord").Disabled && _input.IsRunning,
+                "Dedicated loop recording keeps input active and locks source configuration.");
+            LoopPress("RecordRow/StopRecord");
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(loopList.ItemCount == 1 && list.ItemCount == originalHistoryCount,
+                "Loop capture adds one independent clip without adding a main recording.");
+            loopPanel.GetNode<HSlider>("VolumeRow/Volume").Value = 75;
+            loopPanel.GetNode<SpinBox>("PauseRow/Pause").Value = 0.2;
+            LoopPress("PlaybackRow/Play");
+            await ToSignal(GetTree().CreateTimer(0.3), SceneTreeTimer.SignalName.Timeout);
+            Check(_input.IsRunning && _redirect.IsActive && !loopPanel.GetNode<Button>("PlaybackRow/Stop").Disabled,
+                "A loop runs in the same outgoing live mix as the microphone.");
+            if (DisplayServer.GetName() != "headless")
+            {
+                await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+                GetViewport().GetTexture().GetImage().SavePng("res://.godot/loop-bank-preview.png");
+            }
+            Press("CloseLoops");
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(!loopSidebar.Visible && Button("LoopsToggle").Text.Contains("LIVE") && _redirect.IsActive,
+                "Closing the Loop column preserves its running loop and sending.");
+            Button("LoopsToggle").ButtonPressed = true;
+            var loopSaveDialog = view.GetNode<FileDialog>("%LoopSaveDialog");
+            loopSaveDialog.UseNativeDialog = false;
+            LoopPress("PlaybackRow/Save");
+            Check(loopSaveDialog.Visible, "The selected loop can be exported independently.");
+            loopSaveDialog.Hide();
+            var loopPath = ProjectSettings.GlobalizePath("res://.godot/loop-ui-test.wav");
+            loopSaveDialog.EmitSignal(FileDialog.SignalName.FileSelected, loopPath);
+            Check(System.IO.File.Exists(loopPath), "Loop export writes a WAV through the core library.");
+            LoopPress("PlaybackRow/Stop");
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(_input.IsRunning && _redirect.IsActive && loopPanel.GetNode<Button>("PlaybackRow/Stop").Disabled,
+                "Stopping the loop preserves live microphone sending.");
+            view.Size = wideSize;
             Press("RedirectStop");
             redirectMode.Select(1);
             redirectMode.EmitSignal(OptionButton.SignalName.ItemSelected, 1L);
@@ -338,6 +387,7 @@ public partial class ConsoleUiSmoke : Node
                 "Closing the UI persists the complete last setup.");
             Check(saved.Equalizer == new EqualizerSettings(true, -4, 2, 3, -3), "Closing persists every EQ control.");
             Check(saved.Echo == new EchoSettings(true, 400, 55, 40), "Closing persists every echo control.");
+            Check(saved.Loop == new LoopSettings(75, 0.2), "Closing persists default loop volume and pause.");
             AudioConsoleView Reopen()
             {
                 var reopened = GD.Load<PackedScene>("res://scenes/audio_console.tscn").Instantiate<AudioConsoleView>();
@@ -355,6 +405,10 @@ public partial class ConsoleUiSmoke : Node
             var restoredRows = restored.GetNode<VBoxContainer>("%SourceRows");
             var restoredEq = restored.GetNode<Control>("%EqualizerPanel");
             var restoredEcho = restored.GetNode<Control>("%EchoPanel");
+            var restoredLoop = restored.GetNode<Control>("%LoopPanel");
+            Check(restoredLoop.GetNode<HSlider>("VolumeRow/Volume").Value == 75 &&
+                restoredLoop.GetNode<SpinBox>("PauseRow/Pause").Value == 0.2 && restoredLoop.GetNode<ItemList>("Clips").ItemCount == 0,
+                "Reopening restores loop defaults without session audio or automatic playback.");
             Check(restoredEcho.GetNode<CheckBox>("Header/Enabled").ButtonPressed &&
                 restoredEcho.GetNode<HSlider>("Parameters/Delay").Value == 400 &&
                 restoredEcho.GetNode<HSlider>("Parameters/Feedback").Value == 55 &&

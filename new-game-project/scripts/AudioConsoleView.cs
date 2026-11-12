@@ -121,21 +121,22 @@ public partial class AudioConsoleView : Control
         RenderSources(state);
         RenderEqualizer(state.Equalizer);
         RenderEcho(state.Echo);
+        RenderLoops(state);
         RenderEffectsSummary(state);
         RenderRedirect(state);
         _record.Disabled = !state.InputAvailable || state.IsRecording;
         _stop.Disabled = !state.IsRecording;
         _save.Disabled = state.IsRecording || !state.HasRecording;
-        _play.Disabled = state.IsRecording || !state.HasRecording;
+        _play.Disabled = state.IsRecording || state.Loops.IsRecording || !state.HasRecording;
         _play.Icon = state.IsPlaying ? PauseIcon : PlayIcon;
         _play.TooltipText = state.IsPlaying ? "Pausa riproduzione" : state.IsPaused ? "Riprendi riproduzione" : "Riproduci registrazione selezionata";
         _stopPlayback.Disabled = !state.IsPlaying && !state.IsPaused;
         RenderHistory(state);
         if (_historyContextMenu.Visible) UpdateHistoryMenu(state);
-        _devices.Disabled = state.IsRecording || state.IsInputSuspended || _deviceList.Count == 0;
-        _sourceMode.Disabled = state.IsRecording || state.IsInputSuspended;
-        _refresh.Disabled = state.IsRecording || state.IsInputSuspended;
-        _addSource.Disabled = state.IsRecording || state.IsInputSuspended || _deviceList.Count == 0;
+        _devices.Disabled = state.IsRecording || state.Loops.IsRecording || state.IsInputSuspended || _deviceList.Count == 0;
+        _sourceMode.Disabled = state.IsRecording || state.Loops.IsRecording || state.IsInputSuspended;
+        _refresh.Disabled = state.IsRecording || state.Loops.IsRecording || state.IsInputSuspended;
+        _addSource.Disabled = state.IsRecording || state.Loops.IsRecording || state.IsInputSuspended || _deviceList.Count == 0;
         var tenths = (long)(state.Elapsed.TotalSeconds * 10);
         _timer.Text = $"{tenths / 600:00}:{tenths / 10 % 60:00}.{tenths % 10}";
         var computerOutput = state.Sources.Length == 1 && state.Sources[0].Device.Source == AudioSourceKind.ComputerOutput;
@@ -182,7 +183,7 @@ public partial class AudioConsoleView : Control
                 _sourceRows.AddChild(strip);
                 _strips.Add(source.Device.Identity, strip);
             }
-            strip.ShowSource(source, state.IsRecording || state.IsInputSuspended, state.IsInputSuspended);
+            strip.ShowSource(source, state.IsRecording || state.Loops.IsRecording || state.IsInputSuspended, state.IsInputSuspended);
         }
         _sourceSummary.Text = $"SORGENTI ATTIVE • {state.Sources.Length}   |   MIX STEREO 48 kHz";
         _emptySources.Visible = state.Sources.Length == 0;
@@ -349,7 +350,7 @@ public partial class AudioConsoleView : Control
             && state.Recordings.Any(item => item.Id == _historyMenuTarget);
         _historyContextMenu.SetItemText(0, available && state.IsPlaying ? "Pausa" : available && state.IsPaused ? "Riprendi" : "Riproduci");
         _historyContextMenu.SetItemIcon(0, available && state.IsPlaying ? PauseIcon : PlayIcon);
-        _historyContextMenu.SetItemDisabled(0, !available);
+        _historyContextMenu.SetItemDisabled(0, !available || state.Loops.IsRecording);
         _historyContextMenu.SetItemDisabled(1, !available || (!state.IsPlaying && !state.IsPaused));
         _historyContextMenu.SetItemDisabled(2, !available);
         _historyContextMenu.SetItemDisabled(4, !available || state.Editor == null || state.Editor.SelectionEnd <= state.Editor.SelectionStart);
@@ -398,7 +399,7 @@ public partial class AudioConsoleView : Control
     {
         if (_service == null || index is < 0 or > 1) return;
         var state = _service.GetSnapshot();
-        if (state.IsRecording || state.IsInputSuspended)
+        if (state.IsRecording || state.Loops.IsRecording || state.IsInputSuspended)
         {
             _sourceMode.Select((int)_sourceKind);
             return;
@@ -476,6 +477,11 @@ public partial class AudioConsoleView : Control
 
     private void CloseRequested()
     {
+        if (_service?.GetSnapshot().Loops.IsRecording == true)
+        {
+            try { _service.StopLoopRecording(); }
+            catch (Exception error) { _status.Text = "Copia del loop non riuscita: " + error.Message; return; }
+        }
         if (_service?.GetSnapshot().IsRecording == true) StopRecording();
         if (_service?.GetSnapshot().HasUnsavedRecording == true)
         {
@@ -501,6 +507,7 @@ public partial class AudioConsoleView : Control
         BindEffectsSidebar();
         BindEqualizerControls();
         BindEchoControls();
+        BindLoopControls();
         BindRedirectControls();
         _setupSaveTimer = GetNode<Godot.Timer>("%SetupSaveTimer");
         _setupSaveTimer.Timeout += SaveSetup;
