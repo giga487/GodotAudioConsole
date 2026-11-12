@@ -93,25 +93,31 @@ layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="ConsoleLayout" type="VBoxContainer" parent="Margin/MainColumn/Scroll"]
+[node name="ContentMargin" type="MarginContainer" parent="Margin/MainColumn/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 8
+
+[node name="ConsoleLayout" type="VBoxContainer" parent="Margin/MainColumn/Scroll/ContentMargin"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 14
 
-[node name="WaveformDisplay" parent="Margin/MainColumn/Scroll/ConsoleLayout" instance=ExtResource("3_display")]
+[node name="WaveformDisplay" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout" instance=ExtResource("3_display")]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 120)
 layout_mode = 2
 
-[node name="MicrophoneRow" type="HBoxContainer" parent="Margin/MainColumn/Scroll/ConsoleLayout"]
+[node name="MicrophoneRow" type="HBoxContainer" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="MicrophoneLabel" type="Label" parent="Margin/MainColumn/Scroll/ConsoleLayout/MicrophoneRow"]
+[node name="MicrophoneLabel" type="Label" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/MicrophoneRow"]
 layout_mode = 2
 text = "Sorgente"
 
-[node name="SourceMode" type="OptionButton" parent="Margin/MainColumn/Scroll/ConsoleLayout/MicrophoneRow"]
+[node name="SourceMode" type="OptionButton" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/MicrophoneRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 0)
 layout_mode = 2
@@ -124,55 +130,55 @@ popup/item_0/id = 0
 popup/item_1/text = "Audio del PC"
 popup/item_1/id = 1
 
-[node name="SourceDeviceSelect" type="OptionButton" parent="Margin/MainColumn/Scroll/ConsoleLayout/MicrophoneRow"]
+[node name="SourceDeviceSelect" type="OptionButton" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/MicrophoneRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Seleziona dispositivo"
 clip_text = true
 
-[node name="RefreshButton" type="Button" parent="Margin/MainColumn/Scroll/ConsoleLayout/MicrophoneRow"]
+[node name="RefreshButton" type="Button" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/MicrophoneRow"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Aggiorna"
 
-[node name="AddSourceButton" type="Button" parent="Margin/MainColumn/Scroll/ConsoleLayout/MicrophoneRow"]
+[node name="AddSourceButton" type="Button" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/MicrophoneRow"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "+"
 tooltip_text = "Aggiungi il dispositivo selezionato al mix"
 
-[node name="SourcesSection" type="VBoxContainer" parent="Margin/MainColumn/Scroll/ConsoleLayout"]
+[node name="SourcesSection" type="VBoxContainer" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="SourceSummary" type="Label" parent="Margin/MainColumn/Scroll/ConsoleLayout/SourcesSection"]
+[node name="SourceSummary" type="Label" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/SourcesSection"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
 text = "SORGENTI ATTIVE • 0"
 
-[node name="EmptySources" type="Label" parent="Margin/MainColumn/Scroll/ConsoleLayout/SourcesSection"]
+[node name="EmptySources" type="Label" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/SourcesSection"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
 text = "Scegli un dispositivo e premi + per aggiungerlo al mix."
 autowrap_mode = 3
 
-[node name="SourceRows" type="VBoxContainer" parent="Margin/MainColumn/Scroll/ConsoleLayout/SourcesSection"]
+[node name="SourceRows" type="VBoxContainer" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/SourcesSection"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="VolumeRow" type="HBoxContainer" parent="Margin/MainColumn/Scroll/ConsoleLayout"]
+[node name="VolumeRow" type="HBoxContainer" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="VolumeLabel" type="Label" parent="Margin/MainColumn/Scroll/ConsoleLayout/VolumeRow"]
+[node name="VolumeLabel" type="Label" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/VolumeRow"]
 layout_mode = 2
 text = "Volume mix"
 
-[node name="VolumeSlider" type="HSlider" parent="Margin/MainColumn/Scroll/ConsoleLayout/VolumeRow"]
+[node name="VolumeSlider" type="HSlider" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/VolumeRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 0)
 layout_mode = 2
@@ -181,18 +187,18 @@ tooltip_text = "100% = livello originale. Oltre 100% aumenta il guadagno."
 max_value = 200.0
 value = 100.0
 
-[node name="VolumeValue" type="Label" parent="Margin/MainColumn/Scroll/ConsoleLayout/VolumeRow"]
+[node name="VolumeValue" type="Label" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/VolumeRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(56, 0)
 layout_mode = 2
 text = "100%"
 horizontal_alignment = 2
 
-[node name="TransportRow" type="HBoxContainer" parent="Margin/MainColumn/Scroll/ConsoleLayout"]
+[node name="TransportRow" type="HBoxContainer" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="RecordButton" type="Button" parent="Margin/MainColumn/Scroll/ConsoleLayout/TransportRow"]
+[node name="RecordButton" type="Button" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/TransportRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(52, 48)
 layout_mode = 2
@@ -200,7 +206,7 @@ disabled = true
 tooltip_text = "Avvia registrazione"
 icon = ExtResource("4_record")
 
-[node name="StopButton" type="Button" parent="Margin/MainColumn/Scroll/ConsoleLayout/TransportRow"]
+[node name="StopButton" type="Button" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/TransportRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(52, 48)
 layout_mode = 2
@@ -208,14 +214,14 @@ disabled = true
 tooltip_text = "Ferma registrazione"
 icon = ExtResource("7_stop")
 
-[node name="SaveButton" type="Button" parent="Margin/MainColumn/Scroll/ConsoleLayout/TransportRow"]
+[node name="SaveButton" type="Button" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/TransportRow"]
 unique_name_in_owner = true
 layout_mode = 2
 disabled = true
 text = "Salva WAV"
 tooltip_text = "Esporta la registrazione selezionata nella lista."
 
-[node name="ElapsedTime" type="Label" parent="Margin/MainColumn/Scroll/ConsoleLayout/TransportRow"]
+[node name="ElapsedTime" type="Label" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/TransportRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -223,7 +229,7 @@ theme_override_font_sizes/font_size = 26
 text = "00:00.0"
 horizontal_alignment = 2
 
-[node name="StatusLabel" type="Label" parent="Margin/MainColumn/Scroll/ConsoleLayout"]
+[node name="StatusLabel" type="Label" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
@@ -231,16 +237,16 @@ theme_override_font_sizes/font_size = 15
 text = "Pronto. Seleziona il microfono e premi Registra."
 autowrap_mode = 3
 
-[node name="RedirectSection" type="VBoxContainer" parent="Margin/MainColumn/Scroll/ConsoleLayout"]
+[node name="RedirectSection" type="VBoxContainer" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="Title" type="Label" parent="Margin/MainColumn/Scroll/ConsoleLayout/RedirectSection"]
+[node name="Title" type="Label" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/RedirectSection"]
 layout_mode = 2
 text = "INVIA A UN MICROFONO VIRTUALE"
 theme_override_font_sizes/font_size = 15
 
-[node name="RedirectDevice" type="OptionButton" parent="Margin/MainColumn/Scroll/ConsoleLayout/RedirectSection"]
+[node name="RedirectDevice" type="OptionButton" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/RedirectSection"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -249,11 +255,11 @@ item_count = 1
 selected = 0
 popup/item_0/text = "Seleziona uscita virtuale…"
 
-[node name="Actions" type="HBoxContainer" parent="Margin/MainColumn/Scroll/ConsoleLayout/RedirectSection"]
+[node name="Actions" type="HBoxContainer" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/RedirectSection"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="RedirectMode" type="OptionButton" parent="Margin/MainColumn/Scroll/ConsoleLayout/RedirectSection/Actions"]
+[node name="RedirectMode" type="OptionButton" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/RedirectSection/Actions"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -265,85 +271,85 @@ popup/item_0/id = 0
 popup/item_1/text = "Registrazione selezionata"
 popup/item_1/id = 1
 
-[node name="RedirectRefresh" type="Button" parent="Margin/MainColumn/Scroll/ConsoleLayout/RedirectSection/Actions"]
+[node name="RedirectRefresh" type="Button" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/RedirectSection/Actions"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Aggiorna"
 
-[node name="RedirectStart" type="Button" parent="Margin/MainColumn/Scroll/ConsoleLayout/RedirectSection/Actions"]
+[node name="RedirectStart" type="Button" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/RedirectSection/Actions"]
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("5_play")
 tooltip_text = "Avvia invio alla destinazione scelta"
 disabled = true
 
-[node name="RedirectStop" type="Button" parent="Margin/MainColumn/Scroll/ConsoleLayout/RedirectSection/Actions"]
+[node name="RedirectStop" type="Button" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/RedirectSection/Actions"]
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("7_stop")
 tooltip_text = "Ferma invio"
 disabled = true
 
-[node name="RedirectStatus" type="Label" parent="Margin/MainColumn/Scroll/ConsoleLayout/RedirectSection"]
+[node name="RedirectStatus" type="Label" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/RedirectSection"]
 unique_name_in_owner = true
 layout_mode = 2
 autowrap_mode = 3
 theme_override_font_sizes/font_size = 13
 text = "Invio fermo."
 
-[node name="Hint" type="Label" parent="Margin/MainColumn/Scroll/ConsoleLayout/RedirectSection"]
+[node name="Hint" type="Label" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/RedirectSection"]
 layout_mode = 2
 autowrap_mode = 3
 theme_override_font_sizes/font_size = 13
 text = "VB-CABLE: CABLE Input qui → CABLE Output come microfono nell'altra app."
 
-[node name="VirtualCableHelp" type="LinkButton" parent="Margin/MainColumn/Scroll/ConsoleLayout/RedirectSection"]
+[node name="VirtualCableHelp" type="LinkButton" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/RedirectSection"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
 text = "Scarica e configura VB-CABLE ↗"
 theme_override_font_sizes/font_size = 13
 
-[node name="RecordingEditor" parent="Margin/MainColumn/Scroll/ConsoleLayout" instance=ExtResource("8_editor")]
+[node name="RecordingEditor" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout" instance=ExtResource("8_editor")]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="HistorySection" type="VBoxContainer" parent="Margin/MainColumn/Scroll/ConsoleLayout"]
+[node name="HistorySection" type="VBoxContainer" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="HistoryHeader" type="HBoxContainer" parent="Margin/MainColumn/Scroll/ConsoleLayout/HistorySection"]
+[node name="HistoryHeader" type="HBoxContainer" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/HistorySection"]
 layout_mode = 2
 
-[node name="HistoryTitle" type="Label" parent="Margin/MainColumn/Scroll/ConsoleLayout/HistorySection/HistoryHeader"]
+[node name="HistoryTitle" type="Label" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/HistorySection/HistoryHeader"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "ULTIME REGISTRAZIONI"
 theme_override_font_sizes/font_size = 15
 
-[node name="HistoryCount" type="Label" parent="Margin/MainColumn/Scroll/ConsoleLayout/HistorySection/HistoryHeader"]
+[node name="HistoryCount" type="Label" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/HistorySection/HistoryHeader"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "0 / 10"
 
-[node name="EmptyHistory" type="Label" parent="Margin/MainColumn/Scroll/ConsoleLayout/HistorySection"]
+[node name="EmptyHistory" type="Label" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/HistorySection"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
 text = "Le registrazioni compaiono qui quando premi Stop."
 
-[node name="RecordingList" type="ItemList" parent="Margin/MainColumn/Scroll/ConsoleLayout/HistorySection"]
+[node name="RecordingList" type="ItemList" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/HistorySection"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 116)
 layout_mode = 2
 size_flags_horizontal = 3
 allow_reselect = true
 
-[node name="PlaybackRow" type="HBoxContainer" parent="Margin/MainColumn/Scroll/ConsoleLayout/HistorySection"]
+[node name="PlaybackRow" type="HBoxContainer" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/HistorySection"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="PlayButton" type="Button" parent="Margin/MainColumn/Scroll/ConsoleLayout/HistorySection/PlaybackRow"]
+[node name="PlayButton" type="Button" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/HistorySection/PlaybackRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(52, 48)
 layout_mode = 2
@@ -351,7 +357,7 @@ disabled = true
 tooltip_text = "Riproduci registrazione selezionata"
 icon = ExtResource("5_play")
 
-[node name="StopPlaybackButton" type="Button" parent="Margin/MainColumn/Scroll/ConsoleLayout/HistorySection/PlaybackRow"]
+[node name="StopPlaybackButton" type="Button" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/HistorySection/PlaybackRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(52, 48)
 layout_mode = 2
@@ -359,7 +365,7 @@ disabled = true
 tooltip_text = "Ferma riproduzione"
 icon = ExtResource("7_stop")
 
-[node name="HistoryHint" type="Label" parent="Margin/MainColumn/Scroll/ConsoleLayout/HistorySection"]
+[node name="HistoryHint" type="Label" parent="Margin/MainColumn/Scroll/ContentMargin/ConsoleLayout/HistorySection"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 13
 text = "Temporanee per questa sessione: la più vecchia viene rimossa oltre 10."
