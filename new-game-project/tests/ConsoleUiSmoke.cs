@@ -13,6 +13,10 @@ public partial class ConsoleUiSmoke : Node
         try
         {
             var view = GD.Load<PackedScene>("res://scenes/audio_console.tscn").Instantiate<AudioConsoleView>();
+            Check(view.GetNode<Button>("%RecordButton").Text == "Registra",
+                "Controls must be authored in the scene before _Ready runs.");
+            Check(view.GetNode<Panel>("%WaveformDisplay").GetNode<Control>("CenterLine") != null,
+                "Display background and center line must exist without runtime drawing.");
             view.AudioInputOverride = _input;
             AddChild(view);
             await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);

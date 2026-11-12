@@ -1,0 +1,126 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/WaveformView.cs" id="1_trace"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_Display"]
+bg_color = Color(0.560784, 0.682353, 0.47451, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.066667, 0.105882, 0.062745, 1)
+
+[node name="WaveformDisplay" type="Panel"]
+custom_minimum_size = Vector2(0, 190)
+size_flags_vertical = 3
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBox_Display")
+
+[node name="GridLine1" type="ColorRect" parent="."]
+layout_mode = 1
+anchor_left = 0.125
+anchor_top = 0.0
+anchor_right = 0.125
+anchor_bottom = 1.0
+offset_top = 2.0
+offset_right = 1.0
+offset_bottom = -2.0
+mouse_filter = 2
+color = Color(0, 0, 0, 0.07)
+
+[node name="GridLine2" type="ColorRect" parent="."]
+layout_mode = 1
+anchor_left = 0.25
+anchor_top = 0.0
+anchor_right = 0.25
+anchor_bottom = 1.0
+offset_top = 2.0
+offset_right = 1.0
+offset_bottom = -2.0
+mouse_filter = 2
+color = Color(0, 0, 0, 0.07)
+
+[node name="GridLine3" type="ColorRect" parent="."]
+layout_mode = 1
+anchor_left = 0.375
+anchor_top = 0.0
+anchor_right = 0.375
+anchor_bottom = 1.0
+offset_top = 2.0
+offset_right = 1.0
+offset_bottom = -2.0
+mouse_filter = 2
+color = Color(0, 0, 0, 0.07)
+
+[node name="GridLine4" type="ColorRect" parent="."]
+layout_mode = 1
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_top = 2.0
+offset_right = 1.0
+offset_bottom = -2.0
+mouse_filter = 2
+color = Color(0, 0, 0, 0.07)
+
+[node name="GridLine5" type="ColorRect" parent="."]
+layout_mode = 1
+anchor_left = 0.625
+anchor_top = 0.0
+anchor_right = 0.625
+anchor_bottom = 1.0
+offset_top = 2.0
+offset_right = 1.0
+offset_bottom = -2.0
+mouse_filter = 2
+color = Color(0, 0, 0, 0.07)
+
+[node name="GridLine6" type="ColorRect" parent="."]
+layout_mode = 1
+anchor_left = 0.75
+anchor_top = 0.0
+anchor_right = 0.75
+anchor_bottom = 1.0
+offset_top = 2.0
+offset_right = 1.0
+offset_bottom = -2.0
+mouse_filter = 2
+color = Color(0, 0, 0, 0.07)
+
+[node name="GridLine7" type="ColorRect" parent="."]
+layout_mode = 1
+anchor_left = 0.875
+anchor_top = 0.0
+anchor_right = 0.875
+anchor_bottom = 1.0
+offset_top = 2.0
+offset_right = 1.0
+offset_bottom = -2.0
+mouse_filter = 2
+color = Color(0, 0, 0, 0.07)
+
+[node name="CenterLine" type="ColorRect" parent="."]
+layout_mode = 1
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = 2.0
+offset_right = -2.0
+offset_bottom = 1.0
+mouse_filter = 2
+color = Color(0, 0, 0, 0.25)
+
+[node name="Trace" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 2.0
+offset_top = 2.0
+offset_right = -2.0
+offset_bottom = -2.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_trace")

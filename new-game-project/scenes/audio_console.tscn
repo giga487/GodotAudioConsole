@@ -1,6 +1,8 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/AudioConsoleView.cs" id="1_console"]
+[ext_resource type="Theme" path="res://themes/console_theme.tres" id="2_theme"]
+[ext_resource type="PackedScene" path="res://scenes/waveform_display.tscn" id="3_display"]
 
 [node name="AudioConsole" type="Control"]
 layout_mode = 3
@@ -9,4 +11,148 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("2_theme")
 script = ExtResource("1_console")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.160784, 0.160784, 0.160784, 1)
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
+
+[node name="ConsoleLayout" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Header" type="HBoxContainer" parent="Margin/ConsoleLayout"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Margin/ConsoleLayout/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = "AUDIO CONSOLE"
+
+[node name="SignalLabel" type="Label" parent="Margin/ConsoleLayout/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "INGRESSO LIVE"
+
+[node name="WaveformDisplay" parent="Margin/ConsoleLayout" instance=ExtResource("3_display")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="MicrophoneRow" type="HBoxContainer" parent="Margin/ConsoleLayout"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="MicrophoneLabel" type="Label" parent="Margin/ConsoleLayout/MicrophoneRow"]
+layout_mode = 2
+text = "Microfono"
+
+[node name="MicrophoneSelect" type="OptionButton" parent="Margin/ConsoleLayout/MicrophoneRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Seleziona microfono"
+clip_text = true
+
+[node name="RefreshButton" type="Button" parent="Margin/ConsoleLayout/MicrophoneRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Aggiorna"
+
+[node name="VolumeRow" type="HBoxContainer" parent="Margin/ConsoleLayout"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="VolumeLabel" type="Label" parent="Margin/ConsoleLayout/VolumeRow"]
+layout_mode = 2
+text = "Volume registrazione"
+
+[node name="VolumeSlider" type="HSlider" parent="Margin/ConsoleLayout/VolumeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "100% = livello originale. Oltre 100% aumenta il guadagno."
+max_value = 200.0
+value = 100.0
+
+[node name="VolumeValue" type="Label" parent="Margin/ConsoleLayout/VolumeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(56, 0)
+layout_mode = 2
+text = "100%"
+horizontal_alignment = 2
+
+[node name="TransportRow" type="HBoxContainer" parent="Margin/ConsoleLayout"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="RecordButton" type="Button" parent="Margin/ConsoleLayout/TransportRow"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "Registra"
+
+[node name="StopButton" type="Button" parent="Margin/ConsoleLayout/TransportRow"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "Stop"
+
+[node name="SaveButton" type="Button" parent="Margin/ConsoleLayout/TransportRow"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "Salva WAV"
+
+[node name="ElapsedTime" type="Label" parent="Margin/ConsoleLayout/TransportRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 26
+text = "00:00.0"
+horizontal_alignment = 2
+
+[node name="StatusLabel" type="Label" parent="Margin/ConsoleLayout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "Pronto. Seleziona il microfono e premi Registra."
+autowrap_mode = 3
+
+[node name="SaveDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Salva registrazione WAV"
+size = Vector2i(672, 448)
+file_mode = 4
+access = 2
+filters = PackedStringArray("*.wav ; Audio WAV")
+use_native_dialog = true
+
+[node name="DiscardDialog" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "Registrazione non salvata"
+dialog_text = "La registrazione non è salvata. Vuoi scartarla?"
+ok_button_text = "Scarta"
+cancel_button_text = "Annulla"

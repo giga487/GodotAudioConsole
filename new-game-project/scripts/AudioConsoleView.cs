@@ -20,7 +20,7 @@ public partial class AudioConsoleView : Control
 
     public override void _Ready()
     {
-        BuildInterface();
+        BindControls();
         GetTree().AutoAcceptQuit = false;
         try
         {
@@ -152,133 +152,36 @@ public partial class AudioConsoleView : Control
     public override void _ExitTree() => _service?.Dispose();
     private void ShowError(Exception error) => _status.Text = "Audio non disponibile: " + error.Message;
 
-    private void BuildInterface()
+    private void BindControls()
     {
-        var theme = new Theme { DefaultFontSize = 17 };
-        theme.SetColor("font_color", "Label", new Color("e6e6e6"));
-        foreach (var state in new[] { "normal", "hover", "pressed", "disabled", "focus" })
-        {
-            var style = new StyleBoxFlat
-            {
-                BgColor = new Color(state switch
-                {
-                    "hover" => "616161", "pressed" => "383838", "disabled" => "333333", _ => "505050"
-                })
-            };
-            style.SetCornerRadiusAll(4);
-            style.SetContentMarginAll(12);
-            if (state == "focus")
-            {
-                style.BgColor = Colors.Transparent;
-                style.BorderColor = new Color("a9c797");
-                style.SetBorderWidthAll(2);
-            }
-            theme.SetStylebox(state, "Button", style);
-            theme.SetStylebox(state, "OptionButton", style);
-        }
-        Theme = theme;
-        var background = new ColorRect { Color = new Color("292929"), MouseFilter = MouseFilterEnum.Ignore };
-        AddChild(background);
-        background.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        var margin = new MarginContainer();
-        AddChild(margin);
-        margin.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        foreach (var side in new[] { "left", "top", "right", "bottom" })
-            margin.AddThemeConstantOverride("margin_" + side, 24);
-        var column = new VBoxContainer();
-        column.AddThemeConstantOverride("separation", 14);
-        margin.AddChild(column);
-        var header = new HBoxContainer();
-        column.AddChild(header);
-        var title = MakeLabel("AUDIO CONSOLE", 20);
-        title.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        header.AddChild(title);
-        _signal = MakeLabel("INGRESSO LIVE", 14);
-        header.AddChild(_signal);
-        _waveform = new WaveformView();
-        column.AddChild(_waveform);
-        var deviceRow = MakeRow(column);
-        deviceRow.AddChild(MakeLabel("Microfono"));
-        _devices = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill, ClipText = true };
+        _waveform = GetNode<WaveformView>("%WaveformDisplay/Trace");
+        _devices = GetNode<OptionButton>("%MicrophoneSelect");
+        _refresh = GetNode<Button>("%RefreshButton");
+        _record = GetNode<Button>("%RecordButton");
+        _stop = GetNode<Button>("%StopButton");
+        _save = GetNode<Button>("%SaveButton");
+        _volumeLabel = GetNode<Label>("%VolumeValue");
+        _timer = GetNode<Label>("%ElapsedTime");
+        _status = GetNode<Label>("%StatusLabel");
+        _signal = GetNode<Label>("%SignalLabel");
+        _saveDialog = GetNode<FileDialog>("%SaveDialog");
+        _discardDialog = GetNode<ConfirmationDialog>("%DiscardDialog");
+
         _devices.ItemSelected += SelectDevice;
-        deviceRow.AddChild(_devices);
-        _refresh = MakeButton("Aggiorna", RefreshDevices);
-        deviceRow.AddChild(_refresh);
-        var volumeRow = MakeRow(column);
-        volumeRow.AddChild(MakeLabel("Volume registrazione"));
-        var gain = new HSlider
-        {
-            MinValue = 0, MaxValue = 200, Step = 1, Value = 100,
-            SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new(140, 0),
-            TooltipText = "100% = livello originale. Oltre 100% aumenta il guadagno."
-        };
-        gain.ValueChanged += value =>
+        _refresh.Pressed += RefreshDevices;
+        _record.Pressed += () => StartRecording();
+        _stop.Pressed += StopRecording;
+        _save.Pressed += OpenSaveDialog;
+        GetNode<HSlider>("%VolumeSlider").ValueChanged += value =>
         {
             _service?.SetVolume(value);
             _volumeLabel.Text = $"{value:0}%";
         };
-        volumeRow.AddChild(gain);
-        _volumeLabel = MakeLabel("100%");
-        _volumeLabel.CustomMinimumSize = new(56, 0);
-        _volumeLabel.HorizontalAlignment = HorizontalAlignment.Right;
-        volumeRow.AddChild(_volumeLabel);
-        var transport = MakeRow(column);
-        _record = MakeButton("Registra", () => StartRecording());
-        _record.Disabled = true;
-        transport.AddChild(_record);
-        _stop = MakeButton("Stop", StopRecording);
-        _stop.Disabled = true;
-        transport.AddChild(_stop);
-        _save = MakeButton("Salva WAV", OpenSaveDialog);
-        _save.Disabled = true;
-        transport.AddChild(_save);
-        _timer = MakeLabel("00:00.0", 26);
-        _timer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        _timer.HorizontalAlignment = HorizontalAlignment.Right;
-        transport.AddChild(_timer);
-        _status = MakeLabel("Pronto. Seleziona il microfono e premi Registra.", 15);
-        _status.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        _status.CustomMinimumSize = new(0, 44);
-        column.AddChild(_status);
-        _saveDialog = new FileDialog
-        {
-            Title = "Salva registrazione WAV", FileMode = FileDialog.FileModeEnum.SaveFile,
-            Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.wav ; Audio WAV"], UseNativeDialog = true
-        };
         _saveDialog.FileSelected += SaveWav;
-        AddChild(_saveDialog);
-        _discardDialog = new ConfirmationDialog
-        {
-            Title = "Registrazione non salvata", DialogText = "La registrazione non è salvata. Vuoi scartarla?",
-            OkButtonText = "Scarta", CancelButtonText = "Annulla"
-        };
         _discardDialog.Confirmed += () =>
         {
             if (_pendingQuit) GetTree().Quit();
             else StartRecording(discardUnsaved: true);
         };
-        AddChild(_discardDialog);
-    }
-
-    private static HBoxContainer MakeRow(Node parent)
-    {
-        var row = new HBoxContainer();
-        row.AddThemeConstantOverride("separation", 12);
-        parent.AddChild(row);
-        return row;
-    }
-
-    private static Label MakeLabel(string text, int size = 17)
-    {
-        var label = new Label { Text = text };
-        label.AddThemeFontSizeOverride("font_size", size);
-        return label;
-    }
-
-    private static Button MakeButton(string text, Action action)
-    {
-        var button = new Button { Text = text };
-        button.Pressed += action;
-        return button;
     }
 }

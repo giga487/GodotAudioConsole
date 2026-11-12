@@ -23,6 +23,23 @@ Non occorre copiare DLL a mano. Nessuna libreria fa riferimento a GodotSharp.
 Per aggiungere un altro sistema operativo si implementa `IAudioInput` e si cambia
 la composizione nella vista, mantenendo invariata la logica applicativa.
 
+## Modifica della grafica nell'editor
+
+L'interfaccia è definita in risorse Godot, visibili anche senza avviare il progetto:
+
+- `new-game-project/scenes/audio_console.tscn`: layout, etichette, selettore,
+  slider, pulsanti, timer e finestre di salvataggio/conferma.
+- `new-game-project/scenes/waveform_display.tscn`: display riutilizzabile con
+  pannello verde, bordo, griglia e linea centrale.
+- `new-game-project/themes/console_theme.tres`: font, colori e stili dei pulsanti.
+
+Apri la scena principale nella vista 2D per modificarne i nodi e le proprietà
+nell'Inspector. I Container mantengono l'allineamento durante il ridimensionamento.
+`AudioConsoleView.cs` recupera i controlli tramite nomi univoci (`%RecordButton`,
+ecc.) e collega i segnali: non costruisce l'interfaccia a runtime. Mantieni questi
+nomi quando sposti i controlli nell'albero. `WaveformView.cs` disegna soltanto
+la traccia audio dinamica nel nodo `Trace` del display.
+
 NAudio.Wasapi è fissato alla versione 2.2.1 per la compatibilità con .NET 8;
 la licenza del pacchetto è MIT: [repository NAudio](https://github.com/naudio/NAudio/tree/v2.2.1).
 
