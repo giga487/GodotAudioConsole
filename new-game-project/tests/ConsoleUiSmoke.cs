@@ -157,6 +157,32 @@ public partial class ConsoleUiSmoke : Node
             Check(eqPanel.GetNode<HSlider>("Bands/Bass").Value == 0 && eqEnabled.ButtonPressed,
                 "EQ reset restores flat gain while preserving enabled state.");
             eqEnabled.ButtonPressed = false;
+            var distortionPanel = view.GetNode<Control>("%DistortionPanel");
+            var distortionEnabled = distortionPanel.GetNode<CheckBox>("Header/Enabled");
+            var distortionMode = distortionPanel.GetNode<OptionButton>("Mode");
+            Check(sidebar.IsAncestorOf(distortionPanel) && !distortionEnabled.ButtonPressed && distortionMode.ItemCount == 2,
+                "Distortion is authored in the effects sidebar and starts bypassed.");
+            distortionEnabled.ButtonPressed = true;
+            distortionMode.Select(1);
+            distortionMode.EmitSignal(OptionButton.SignalName.ItemSelected, 1L);
+            distortionPanel.GetNode<HSlider>("Parameters/Drive").Value = 18;
+            distortionPanel.GetNode<HSlider>("Parameters/Mix").Value = 65;
+            distortionPanel.GetNode<HSlider>("Parameters/Output").Value = -9;
+            await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
+            Check(_redirect.IsActive && _input.IsRunning && Button("StopButton").Disabled &&
+                distortionPanel.GetNode<Label>("Parameters/DriveValue").Text == "18 dB" && Button("EffectsToggle").Text.Contains("1"),
+                "Distortion settings change while sending live without REC and update the active effect count.");
+            Press("CloseEffects");
+            Check(distortionEnabled.ButtonPressed && _redirect.IsActive, "Hiding effects preserves enabled distortion and sending.");
+            Button("EffectsToggle").ButtonPressed = true;
+            distortionPanel.GetNode<Button>("Header/Reset").EmitSignal(BaseButton.SignalName.Pressed);
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Check(distortionEnabled.ButtonPressed && distortionMode.Selected == 0 &&
+                distortionPanel.GetNode<HSlider>("Parameters/Drive").Value == 12 &&
+                distortionPanel.GetNode<HSlider>("Parameters/Mix").Value == 50 &&
+                distortionPanel.GetNode<HSlider>("Parameters/Output").Value == -6,
+                "Distortion reset restores Soft mode and default controls while retaining enabled state.");
+            distortionEnabled.ButtonPressed = false;
             var echoPanel = view.GetNode<Control>("%EchoPanel");
             var echoEnabled = echoPanel.GetNode<CheckBox>("Header/Enabled");
             Check(!echoEnabled.ButtonPressed && echoPanel.GetNode<HSlider>("Parameters/Delay").Value == 250,
@@ -199,6 +225,11 @@ public partial class ConsoleUiSmoke : Node
             var loopList = loopPanel.GetNode<ItemList>("Clips");
             Check(loopSidebar.Visible && sidebar.Visible && loopSidebar.GetGlobalRect().Position.X > sidebar.GetGlobalRect().End.X,
                 "Wide layouts show a separate Loop column alongside Effects.");
+            Check(sidebar.GetGlobalRect().Position.X - view.GetNode<Control>("Margin/MainColumn/Scroll").GetGlobalRect().End.X >= 47,
+                "Effect controls and their scrollbar must fit the sidebar without reducing its gap from the recording console.");
+            foreach (var effectPanel in new[] { eqPanel, distortionPanel, echoPanel })
+                Check(effectPanel.GetNode<Button>("Header/Reset").GetGlobalRect().End.X <= sidebar.GetGlobalRect().End.X - 16,
+                    "All effect header controls must fit inside the sidebar without being clipped.");
             var originalHistoryCount = list.ItemCount;
             LoopPress("RecordRow/Record");
             await ToSignal(GetTree().CreateTimer(0.25), SceneTreeTimer.SignalName.Timeout);
@@ -381,12 +412,19 @@ public partial class ConsoleUiSmoke : Node
             echoPanel.GetNode<HSlider>("Parameters/Delay").Value = 400;
             echoPanel.GetNode<HSlider>("Parameters/Feedback").Value = 55;
             echoPanel.GetNode<HSlider>("Parameters/Amount").Value = 40;
+            distortionEnabled.ButtonPressed = true;
+            distortionMode.Select(1);
+            distortionMode.EmitSignal(OptionButton.SignalName.ItemSelected, 1L);
+            distortionPanel.GetNode<HSlider>("Parameters/Drive").Value = 18;
+            distortionPanel.GetNode<HSlider>("Parameters/Mix").Value = 65;
+            distortionPanel.GetNode<HSlider>("Parameters/Output").Value = -9;
             view.Free(); // Exit must flush changes even when the debounce timer has not elapsed.
             var saved = new LastSetupStore(setupPath).Load()!;
             Check(saved.Sources.Length == 2 && saved.MasterVolumePercent == 67 && saved.Sources[0].VolumePercent == 35,
                 "Closing the UI persists the complete last setup.");
             Check(saved.Equalizer == new EqualizerSettings(true, -4, 2, 3, -3), "Closing persists every EQ control.");
             Check(saved.Echo == new EchoSettings(true, 400, 55, 40), "Closing persists every echo control.");
+            Check(saved.Distortion == new DistortionSettings(true, DistortionMode.Hard, 18, 65, -9), "Closing persists every distortion control.");
             Check(saved.Loop == new LoopSettings(75, 0.2), "Closing persists default loop volume and pause.");
             AudioConsoleView Reopen()
             {
@@ -405,6 +443,13 @@ public partial class ConsoleUiSmoke : Node
             var restoredRows = restored.GetNode<VBoxContainer>("%SourceRows");
             var restoredEq = restored.GetNode<Control>("%EqualizerPanel");
             var restoredEcho = restored.GetNode<Control>("%EchoPanel");
+            var restoredDistortion = restored.GetNode<Control>("%DistortionPanel");
+            Check(restoredDistortion.GetNode<CheckBox>("Header/Enabled").ButtonPressed &&
+                restoredDistortion.GetNode<OptionButton>("Mode").Selected == 1 &&
+                restoredDistortion.GetNode<HSlider>("Parameters/Drive").Value == 18 &&
+                restoredDistortion.GetNode<HSlider>("Parameters/Mix").Value == 65 &&
+                restoredDistortion.GetNode<HSlider>("Parameters/Output").Value == -9,
+                "Reopening restores enabled distortion, mode and all parameters without restarting sending.");
             var restoredLoop = restored.GetNode<Control>("%LoopPanel");
             Check(restoredLoop.GetNode<HSlider>("VolumeRow/Volume").Value == 75 &&
                 restoredLoop.GetNode<SpinBox>("PauseRow/Pause").Value == 0.2 && restoredLoop.GetNode<ItemList>("Clips").ItemCount == 0,

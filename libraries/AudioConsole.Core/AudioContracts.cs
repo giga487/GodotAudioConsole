@@ -100,4 +100,5 @@ public sealed record ConsoleSnapshot(
     AudioRedirectState Redirect,
     EqualizerSettings Equalizer,
     EchoSettings Echo,
-    LoopSnapshot Loops);
+    LoopSnapshot Loops,
+    DistortionSettings Distortion);

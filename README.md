@@ -7,7 +7,7 @@ Il backend audio attuale usa WASAPI e richiede **Windows**.
 
 | Progetto | Responsabilità | Dipendenze |
 | --- | --- | --- |
-| `libraries/AudioConsole.Core` | Mixer multisorgente, EQ, Echo, banco Loop, ultimo setup JSON, guadagni, buffer/clock, PCM, timeline, ritaglio, cronologia, ascolto ed esportazione WAV | Solo libreria standard .NET |
+| `libraries/AudioConsole.Core` | Mixer multisorgente, EQ, distorsione, Echo, banco Loop, ultimo setup JSON, guadagni, buffer/clock, PCM, timeline, ritaglio, cronologia, ascolto ed esportazione WAV | Solo libreria standard .NET |
 | `libraries/AudioConsole.Windows` | Microfoni, cattura dell'uscita PC (loopback), riproduzione WASAPI, conversione campioni | Core e NAudio.Wasapi 2.2.1 |
 | `new-game-project` | Controlli, disegno, finestre, conferme e traduzione dei comandi utente | Core, Windows e Godot |
 | `tests/AudioConsole.Tests` | Test applicativi senza motore e prova hardware opzionale | Core e Windows |
@@ -76,7 +76,7 @@ Il primo restore richiede NuGet per l'SDK Godot e NAudio.
 
 ## Utilizzo
 
-Equalizzatore ed Echo sono nel pannello **Effetti** a destra, con scorrimento
+Equalizzatore, Distorsione ed Echo sono nel pannello **Effetti** a destra, con scorrimento
 indipendente. **×**, **Esc** o il pulsante **Effetti** nell'intestazione chiudono
 il pannello, restituendo spazio alla console; lo stesso pulsante lo riapre e
 mostra quanti effetti sono attivi. Chiudere il pannello mantiene impostazioni,
@@ -201,7 +201,7 @@ come microfono nell'altra applicazione, oppure scegli delle cuffie come uscita
 per ascoltarti. Con più sorgenti l'EQ modifica l'intero mix, compreso l'audio PC.
 I comandi sono modificabili durante l'invio e durante REC.
 
-Il percorso è **sorgenti → volumi sorgenti → somma → EQ → Echo → volume mix →
+Il percorso è **sorgenti → volumi sorgenti → somma → EQ → Distorsione → Echo → volume mix →
 controllo picchi e saturazione → invio / nuova registrazione**. Se compare PICCO,
 riduci Uscita EQ o Volume mix. Il volume di uscita dell'EQ è escluso in bypass.
 Le registrazioni già presenti conservano il loro suono, anche durante l'ascolto
@@ -214,6 +214,33 @@ graduali, e lo stato dei filtri viene azzerato alla riapertura degli ingressi.
 Il pannello è modificabile in `new-game-project/scenes/equalizer_panel.tscn`.
 Tutti i valori e l'attivazione vengono salvati nel last setup; i vecchi JSON senza
 EQ restano compatibili e vengono caricati con EQ disattivato e valori a zero.
+
+## Distorsione sul mix dal vivo
+
+La distorsione aumenta il segnale con **Drive**, poi ne modifica i picchi:
+**Soft** usa una saturazione progressiva (tanh), mentre **Hard** taglia i picchi
+alla soglia, producendo un carattere più aggressivo. Il pannello è tra EQ ed
+Echo nella colonna Effetti ed è utilizzabile mentre invii **Mix dal vivo**, senza REC.
+
+- **Attivo** abilita l'effetto; disattivalo per confrontare il segnale originale.
+- **Drive**, 0–36 dB, aumenta quanto il segnale entra nella saturazione.
+- **Mix**, 0–100%, miscela originale e distorto: zero conserva l'originale,
+  cento usa soltanto il segnale distorto.
+- **Uscita**, da -24 a +6 dB, compensa il volume della sola parte distorta prima
+  del Mix. In bypass e con Mix a zero il suono originale resta invariato.
+- **Reset** ripristina Soft, Drive 12 dB, Mix 50% e Uscita -6 dB, mantenendo Attivo.
+
+Per iniziare attiva Soft con i valori di default e aumenta gradualmente Drive.
+La modalità Hard rende l'effetto più evidente. Se compare PICCO, riduci Uscita
+o Volume mix. Parametri, cambio modalità e bypass effettuano transizioni graduali.
+Tutte le regolazioni vengono salvate nel last setup; i JSON precedenti restano
+compatibili e caricano la distorsione disattivata, senza avviare l'invio.
+
+Le nuove registrazioni e clip Loop contengono gli effetti attivi al momento della
+cattura. I WAV e le clip già presenti mantengono il loro suono: la riproduzione
+di un loop non attraversa nuovamente la distorsione. La logica è interamente in
+`AudioConsole.Core/VoiceDistortion.cs`; il pannello statico è in
+`new-game-project/scenes/distortion_panel.tscn`.
 
 ## Echo sul mix dal vivo
 
@@ -271,7 +298,7 @@ Alla chiusura l'app segnala anche le clip Loop non esportate. Le clip non vengon
 ricaricate all'avvio; il last setup salva i valori di volume e pausa, senza audio
 e senza avviare registrazioni, loop o invio.
 
-REC Loop acquisisce le sorgenti live **dopo EQ/Echo e prima del Volume mix**;
+REC Loop acquisisce le sorgenti live **dopo EQ/Distorsione/Echo e prima del Volume mix**;
 all'avvio ferma il loop precedente e non lo registra nella nuova clip. La clip
 viene riprodotta dopo gli effetti, evitando di applicarli di nuovo a ogni giro.
 Il Volume mix regola poi voce e loop insieme. REC della console principale può
@@ -352,6 +379,10 @@ ripetizione continua, limite di dieci clip, esportazione, pulizia, disconnession
 salvataggio impostazioni e conversione mono/stereo con clock stabile. Il test UI
 copre la terza colonna, REC/STOP/PLAY, invio simultaneo, export e chiusura senza
 interrompere il loop; salva `.godot/loop-bank-preview.png` nella prova grafica.
+Per la distorsione verificano Soft/Hard, guadagni, Mix, bypass, transizioni,
+input non finiti, ordine degli effetti, invio senza REC, registrazione e cattura
+Loop, conservazione dei file esistenti e ripristino del setup. La prova UI copre
+anche modalità, controlli, reset, conteggio effetti e riapertura dell'app.
 Sono un eseguibile di test senza dipendenze da un framework di test esterno;
 restituiscono codice 0 quando tutti i controlli passano.
 

@@ -35,7 +35,7 @@ text = "Ritardo"
 
 [node name="Delay" type="HSlider" parent="Parameters"]
 layout_mode = 2
-custom_minimum_size = Vector2(140, 24)
+custom_minimum_size = Vector2(100, 24)
 size_flags_horizontal = 3
 min_value = 40.0
 max_value = 1000.0
@@ -85,4 +85,4 @@ text = "30%"
 layout_mode = 2
 theme_override_font_sizes/font_size = 13
 autowrap_mode = 3
-text = "Dopo l'EQ, su tutto il mix live e anche senza REC. I file esistenti restano invariati."
+text = "Dopo EQ e Distorsione, sul mix live anche senza REC. I file esistenti restano invariati."

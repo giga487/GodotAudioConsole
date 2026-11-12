@@ -1,0 +1,100 @@
+[gd_scene format=3]
+
+[node name="DistortionPanel" type="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Header" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 15
+text = "DISTORSIONE"
+
+[node name="Enabled" type="CheckBox" parent="Header"]
+layout_mode = 2
+text = "Attivo"
+tooltip_text = "Attiva la distorsione o confronta la voce originale (bypass)."
+
+[node name="Reset" type="Button" parent="Header"]
+layout_mode = 2
+text = "Reset"
+tooltip_text = "Ripristina Soft, Drive 12 dB, Mix 50%, Uscita -6 dB."
+
+[node name="Mode" type="OptionButton" parent="."]
+layout_mode = 2
+clip_text = true
+item_count = 2
+selected = 0
+popup/item_0/text = "Soft • saturazione morbida"
+popup/item_0/id = 0
+popup/item_1/text = "Hard • taglio aggressivo"
+popup/item_1/id = 1
+fit_to_longest_item = false
+
+[node name="Parameters" type="GridContainer" parent="."]
+layout_mode = 2
+columns = 3
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 6
+
+[node name="DriveLabel" type="Label" parent="Parameters"]
+layout_mode = 2
+text = "Drive"
+
+[node name="Drive" type="HSlider" parent="Parameters"]
+layout_mode = 2
+custom_minimum_size = Vector2(70, 24)
+size_flags_horizontal = 3
+max_value = 36.0
+step = 0.5
+value = 12.0
+tooltip_text = "Amplificazione prima della saturazione: aumentando Drive il suono diventa più ruvido."
+
+[node name="DriveValue" type="Label" parent="Parameters"]
+layout_mode = 2
+custom_minimum_size = Vector2(64, 0)
+horizontal_alignment = 2
+text = "12 dB"
+
+[node name="MixLabel" type="Label" parent="Parameters"]
+layout_mode = 2
+text = "Mix"
+
+[node name="Mix" type="HSlider" parent="Parameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 100.0
+value = 50.0
+tooltip_text = "0% = originale, 100% = solo distorsione."
+
+[node name="MixValue" type="Label" parent="Parameters"]
+layout_mode = 2
+horizontal_alignment = 2
+text = "50%"
+
+[node name="OutputLabel" type="Label" parent="Parameters"]
+layout_mode = 2
+text = "Uscita"
+
+[node name="Output" type="HSlider" parent="Parameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -24.0
+max_value = 6.0
+step = 0.5
+value = -6.0
+tooltip_text = "Volume della parte distorta, prima di miscelarla con l'originale."
+
+[node name="OutputValue" type="Label" parent="Parameters"]
+layout_mode = 2
+horizontal_alignment = 2
+text = "-6 dB"
+
+[node name="Hint" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+autowrap_mode = 3
+text = "Dopo l'EQ, prima dell'Echo. Agisce sul mix live anche senza REC. Riduci Uscita per compensare il volume."

@@ -15,6 +15,7 @@ public sealed partial class AudioConsoleService : IDisposable
     private readonly IAudioPlayback? _playback;
     private readonly VoiceEqualizer _equalizer = new();
     private readonly VoiceEcho _echo = new();
+    private readonly VoiceDistortion _distortion = new();
     private readonly RecordingStore _recordings;
     private Guid? _selectedRecordingId;
     private string? _selectedInputId;
@@ -114,6 +115,7 @@ public sealed partial class AudioConsoleService : IDisposable
                 _format.Validate();
                 _equalizer.Reset(_format);
                 _echo.Reset(_format);
+                _distortion.Reset(_format);
                 _loops.ResetFormat(_format);
                 _inputAvailable = true;
                 _selectedInputId = deviceId;
@@ -146,6 +148,11 @@ public sealed partial class AudioConsoleService : IDisposable
     public void SetEcho(EchoSettings settings)
     {
         lock (_gate) { ObjectDisposedException.ThrowIf(_disposed, this); _echo.Configure(settings); }
+    }
+
+    public void SetDistortion(DistortionSettings settings)
+    {
+        lock (_gate) { ObjectDisposedException.ThrowIf(_disposed, this); _distortion.Configure(settings); }
     }
 
     public RecordingStartResult StartRecording()
@@ -348,6 +355,7 @@ public sealed partial class AudioConsoleService : IDisposable
                 _format.Validate();
                 _equalizer.Reset(_format);
                 _echo.Reset(_format);
+                _distortion.Reset(_format);
                 _loops.ResetFormat(_format);
                 _inputError = null;
                 _channelIndex = _peakFrames = 0;
@@ -394,7 +402,7 @@ public sealed partial class AudioConsoleService : IDisposable
                 playing, _playback?.IsPaused == true, _playback?.Error, _inputSuspended, editor,
                 (_input as IMultiSourceAudioInput)?.GetSources() ?? [],
                 new(_redirectMode, _redirectDestination, _redirectActive, sendingFile ? _selectedRecordingId : null, _redirectError),
-                _equalizer.Settings, _echo.Settings, _loops.Snapshot());
+                _equalizer.Settings, _echo.Settings, _loops.Snapshot(), _distortion.Settings);
         }
     }
 
@@ -412,7 +420,8 @@ public sealed partial class AudioConsoleService : IDisposable
             foreach (var source in span)
             {
                 var equalized = _equalizer.ProcessSample(source, _channelIndex);
-                var voice = _echo.ProcessSample(equalized, _channelIndex);
+                var distorted = _distortion.ProcessSample(equalized, _channelIndex);
+                var voice = _echo.ProcessSample(distorted, _channelIndex);
                 _loops.Capture(voice, _channelIndex);
                 var value = (voice + _loops.ReadSample(_channelIndex)) * gain;
                 if (Math.Abs(value) > 0.0001f) _lastSignal = Stopwatch.GetTimestamp();

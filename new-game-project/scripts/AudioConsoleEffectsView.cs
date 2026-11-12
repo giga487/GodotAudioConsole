@@ -71,7 +71,7 @@ public partial class AudioConsoleView
 
     private void RenderEffectsSummary(ConsoleSnapshot state)
     {
-        var active = (state.Equalizer.Enabled ? 1 : 0) + (state.Echo.Enabled ? 1 : 0);
+        var active = (state.Equalizer.Enabled ? 1 : 0) + (state.Distortion.Enabled ? 1 : 0) + (state.Echo.Enabled ? 1 : 0);
         _effectsToggle.Text = active == 0 ? "Effetti" : $"Effetti • {active}";
     }
 

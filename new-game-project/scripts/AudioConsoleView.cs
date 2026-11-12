@@ -120,6 +120,7 @@ public partial class AudioConsoleView : Control
         RenderEditor(state);
         RenderSources(state);
         RenderEqualizer(state.Equalizer);
+        RenderDistortion(state.Distortion);
         RenderEcho(state.Echo);
         RenderLoops(state);
         RenderEffectsSummary(state);
@@ -506,6 +507,7 @@ public partial class AudioConsoleView : Control
     {
         BindEffectsSidebar();
         BindEqualizerControls();
+        BindDistortionControls();
         BindEchoControls();
         BindLoopControls();
         BindRedirectControls();
