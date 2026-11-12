@@ -24,6 +24,18 @@ public partial class ConsoleUiSmoke : Node
             await ToSignal(GetTree().CreateTimer(0.15), SceneTreeTimer.SignalName.Timeout);
             Button Button(string name) => view.GetNode<Button>("%" + name);
             void Press(string name) => Button(name).EmitSignal(BaseButton.SignalName.Pressed);
+            var list = view.GetNode<ItemList>("%RecordingList");
+            var menu = view.GetNode<PopupMenu>("%HistoryContextMenu");
+            void RightClick(int? index)
+            {
+                var position = index.HasValue ? list.GetItemRect(index.Value).GetCenter() : new Vector2(8, list.Size.Y - 4);
+                list.EmitSignal(Control.SignalName.GuiInput,
+                    new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = true, Position = position });
+            }
+            void MenuAction(int id) => menu.EmitSignal(PopupMenu.SignalName.IdPressed, (long)id);
+            RightClick(null);
+            Check(menu.Visible && menu.IsItemDisabled(0) && menu.IsItemDisabled(2), "An empty history opens a menu with unavailable actions disabled.");
+            menu.Hide();
             Check(!Button("RecordButton").Disabled && Button("StopButton").Disabled && Button("SaveButton").Disabled,
                 "Initial button states.");
             Press("RecordButton");
@@ -36,7 +48,6 @@ public partial class ConsoleUiSmoke : Node
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             Check(!Button("SaveButton").Disabled, "Stopped recording can be saved.");
             var confirmation = view.GetChildren().OfType<ConfirmationDialog>().Single(dialog => dialog is not FileDialog);
-            var list = view.GetNode<ItemList>("%RecordingList");
             Check(list.ItemCount == 1 && list.GetItemText(0).Contains("Temporanea"), "Stopped take must appear in history before export.");
             Press("PlayButton");
             _playback.Position = TimeSpan.FromSeconds(0.1);
@@ -57,16 +68,39 @@ public partial class ConsoleUiSmoke : Node
             Press("StopPlaybackButton");
             Check(_input.IsRunning, "STOP restores the microphone.");
             var dialog = view.GetChildren().OfType<FileDialog>().Single();
+            dialog.UseNativeDialog = false; // Keep the save-dialog integration test inside Godot.
+            RightClick(0);
+            MenuAction(2);
+            Check(dialog.Visible, "Save WAV from the context menu opens the save dialog.");
+            dialog.Hide();
             var path = ProjectSettings.GlobalizePath("res://.godot/csharp-ui-test.wav");
             dialog.EmitSignal(FileDialog.SignalName.FileSelected, path);
             Check(System.IO.File.Exists(path), "UI command must save through the external DLL.");
             Press("RecordButton");
+            RightClick(0);
+            Check(menu.IsItemDisabled(0) && menu.IsItemDisabled(2) && menu.IsItemDisabled(4),
+                "Context commands must be disabled during recording.");
+            menu.Hide();
             await ToSignal(GetTree().CreateTimer(0.2), SceneTreeTimer.SignalName.Timeout);
             Press("StopButton");
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             Check(list.ItemCount == 2, "A second take must preserve the previous one.");
-            list.EmitSignal(ItemList.SignalName.ItemSelected, 1L);
+            RightClick(1);
+            Check(menu.Visible && list.IsSelected(1) && !menu.IsItemDisabled(0), "Right-click selects the targeted older take.");
+            MenuAction(0);
+            Check(_playback.IsPlaying, "Context PLAY uses the right-clicked take.");
+            RightClick(1);
+            Check(menu.GetItemText(0) == "Pausa" && _playback.IsPlaying, "Opening the menu on the playing take preserves playback.");
+            MenuAction(0);
+            Check(_playback.IsPaused, "Context PAUSE pauses playback.");
+            RightClick(1);
+            Check(menu.GetItemText(0) == "Riprendi", "A paused take offers Resume.");
+            MenuAction(0);
+            Check(_playback.IsPlaying, "Context RESUME resumes playback.");
+            RightClick(1);
+            MenuAction(1);
+            Check(!_playback.IsPlaying && _input.IsRunning, "Context STOP restores microphone capture.");
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             Press("PlayButton");
@@ -88,7 +122,15 @@ public partial class ConsoleUiSmoke : Node
                 await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
                 GetViewport().GetTexture().GetImage().SavePng("res://.godot/selection-preview.png");
             }
-            generate.EmitSignal(BaseButton.SignalName.Pressed);
+            RightClick(1);
+            Check(!menu.IsItemDisabled(4), "Context crop generation is enabled for a valid selection.");
+            if (DisplayServer.GetName() != "headless")
+            {
+                await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+                await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+                menu.GetTexture().GetImage().SavePng("res://.godot/context-menu-preview.png");
+            }
+            MenuAction(4);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             Check(list.ItemCount == 3 && list.GetItemText(0).Contains("Ritaglio"), "Generating selection adds a crop without replacing either original take.");

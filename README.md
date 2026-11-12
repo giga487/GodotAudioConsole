@@ -72,6 +72,10 @@ Il primo restore richiede NuGet per l'SDK Godot e NAudio.
 - WAV PCM a 16 bit, con frequenza e canali mono/stereo dell'ingresso.
 - Lista sotto la console delle ultime **10 registrazioni**, con durata e stato
   **Temporanea / Salvata**. La più recente viene selezionata automaticamente.
+- **Tasto destro** su una voce: menu contestuale con Riproduci / Pausa / Riprendi,
+  Ferma riproduzione, Salva WAV e Genera parte selezionata. Il clic destro seleziona
+  la voce; i comandi non disponibili sono disabilitati. Il `PopupMenu` è definito
+  nella scena principale e modificabile nell'editor.
 - Due pulsanti di ascolto sulla registrazione selezionata: **▶ / ⏸** per
   riprodurre, mettere in pausa e riprendere dallo stesso punto, **■** per fermare.
   Il doppio clic su una riga avvia l'ascolto anche prima di esportarla.

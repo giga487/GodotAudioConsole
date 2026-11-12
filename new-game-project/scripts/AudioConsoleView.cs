@@ -31,6 +31,9 @@ public partial class AudioConsoleView : Control
     private Label _playbackTime = null!;
     private ProgressBar _leftMeter = null!, _rightMeter = null!;
     private bool _syncingEditor;
+    private PopupMenu _historyContextMenu = null!;
+    private Guid? _historyMenuTarget;
+    private enum HistoryAction { PlayPause, Stop, Save, GeneratePart = 4 }
 
     public override void _Ready()
     {
@@ -66,6 +69,7 @@ public partial class AudioConsoleView : Control
         _play.TooltipText = state.IsPlaying ? "Pausa riproduzione" : state.IsPaused ? "Riprendi riproduzione" : "Riproduci registrazione selezionata";
         _stopPlayback.Disabled = !state.IsPlaying && !state.IsPaused;
         RenderHistory(state);
+        if (_historyContextMenu.Visible) UpdateHistoryMenu(state);
         _devices.Disabled = state.IsRecording || state.IsInputSuspended || _deviceList.Count == 0;
         _refresh.Disabled = state.IsRecording || state.IsInputSuspended;
         var tenths = (long)(state.Elapsed.TotalSeconds * 10);
@@ -171,6 +175,71 @@ public partial class AudioConsoleView : Control
             _status.Text = "Ascolto in pausa.";
         }
         else PlaySelected();
+    }
+
+    private void StopPlayback()
+    {
+        _service?.StopPlayback();
+        _status.Text = "Ascolto fermato.";
+    }
+
+    private void GenerateSelectedPart()
+    {
+        try
+        {
+            var part = _service!.GenerateSelectedPart();
+            _status.Text = part.Name + " aggiunto alla lista. L'originale è intatto.";
+        }
+        catch (Exception error) { _status.Text = "Ritaglio non riuscito: " + error.Message; }
+    }
+
+    private void OnHistoryGuiInput(InputEvent @event)
+    {
+        if (@event is not InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Right } mouse || _service == null) return;
+        var index = _historyList.GetItemAtPosition(mouse.Position, exact: true);
+        var state = _service.GetSnapshot();
+        _historyMenuTarget = index >= 0 && index < _displayedHistory.Length ? _displayedHistory[index].Id : null;
+        if (_historyMenuTarget.HasValue && !state.IsRecording)
+        {
+            // Right-clicking the current playing item must not stop it just to open its menu.
+            if (state.SelectedRecordingId != _historyMenuTarget) SelectRecording(index);
+            _historyList.Select(index);
+        }
+        UpdateHistoryMenu(_service.GetSnapshot());
+        var transform = _historyContextMenu.IsEmbedded() ? _historyList.GetGlobalTransformWithCanvas() : _historyList.GetScreenTransform();
+        _historyContextMenu.Position = (Vector2I)(transform * mouse.Position);
+        _historyContextMenu.ResetSize();
+        _historyContextMenu.Popup();
+        _historyList.AcceptEvent();
+    }
+
+    private void UpdateHistoryMenu(ConsoleSnapshot state)
+    {
+        var available = !state.IsRecording && _historyMenuTarget.HasValue && state.SelectedRecordingId == _historyMenuTarget
+            && state.Recordings.Any(item => item.Id == _historyMenuTarget);
+        _historyContextMenu.SetItemText(0, available && state.IsPlaying ? "Pausa" : available && state.IsPaused ? "Riprendi" : "Riproduci");
+        _historyContextMenu.SetItemIcon(0, available && state.IsPlaying ? PauseIcon : PlayIcon);
+        _historyContextMenu.SetItemDisabled(0, !available);
+        _historyContextMenu.SetItemDisabled(1, !available || (!state.IsPlaying && !state.IsPaused));
+        _historyContextMenu.SetItemDisabled(2, !available);
+        _historyContextMenu.SetItemDisabled(4, !available || state.Editor == null || state.Editor.SelectionEnd <= state.Editor.SelectionStart);
+    }
+
+    private void OnHistoryMenuAction(long id)
+    {
+        _historyContextMenu.Hide();
+        if (_service == null) return;
+        var state = _service.GetSnapshot();
+        UpdateHistoryMenu(state);
+        var index = _historyContextMenu.GetItemIndex((int)id);
+        if (index < 0 || _historyContextMenu.IsItemDisabled(index)) return;
+        switch ((HistoryAction)id)
+        {
+            case HistoryAction.PlayPause: TogglePlayback(); break;
+            case HistoryAction.Stop: StopPlayback(); break;
+            case HistoryAction.Save: OpenSaveDialog(); break;
+            case HistoryAction.GeneratePart: GenerateSelectedPart(); break;
+        }
     }
 
     private void RefreshDevices()
@@ -287,7 +356,10 @@ public partial class AudioConsoleView : Control
         _signal = GetNode<Label>("%SignalLabel");
         _saveDialog = GetNode<FileDialog>("%SaveDialog");
         _discardDialog = GetNode<ConfirmationDialog>("%DiscardDialog");
+        _historyContextMenu = GetNode<PopupMenu>("%HistoryContextMenu");
+        _historyContextMenu.IdPressed += OnHistoryMenuAction;
         _historyList = GetNode<ItemList>("%RecordingList");
+        _historyList.GuiInput += OnHistoryGuiInput;
         _historyCount = GetNode<Label>("%HistoryCount");
         _emptyHistory = GetNode<Label>("%EmptyHistory");
         _play = GetNode<Button>("%PlayButton");
@@ -303,15 +375,7 @@ public partial class AudioConsoleView : Control
         _timeline.SelectionRequested += SetSelection;
         _selectionStart.ValueChanged += value => SetSelection(value, Math.Max(value, _selectionEnd.Value));
         _selectionEnd.ValueChanged += value => SetSelection(Math.Min(value, _selectionStart.Value), value);
-        _generatePart.Pressed += () =>
-        {
-            try
-            {
-                var part = _service!.GenerateSelectedPart();
-                _status.Text = part.Name + " aggiunto alla lista. L'originale è intatto.";
-            }
-            catch (Exception error) { _status.Text = "Ritaglio non riuscito: " + error.Message; }
-        };
+        _generatePart.Pressed += GenerateSelectedPart;
 
         _devices.ItemSelected += SelectDevice;
         _refresh.Pressed += RefreshDevices;
@@ -333,10 +397,6 @@ public partial class AudioConsoleView : Control
             PlaySelected();
         };
         _play.Pressed += TogglePlayback;
-        _stopPlayback.Pressed += () =>
-        {
-            _service?.StopPlayback();
-            _status.Text = "Ascolto fermato.";
-        };
+        _stopPlayback.Pressed += StopPlayback;
     }
 }

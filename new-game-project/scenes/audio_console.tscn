@@ -230,6 +230,22 @@ access = 2
 filters = PackedStringArray("*.wav ; Audio WAV")
 use_native_dialog = true
 
+[node name="HistoryContextMenu" type="PopupMenu" parent="."]
+unique_name_in_owner = true
+item_count = 5
+item_0/text = "Riproduci"
+item_0/icon = ExtResource("5_play")
+item_0/id = 0
+item_1/text = "Ferma riproduzione"
+item_1/icon = ExtResource("7_stop")
+item_1/id = 1
+item_2/text = "Salva WAV…"
+item_2/id = 2
+item_3/separator = true
+item_3/id = 3
+item_4/text = "Genera parte selezionata"
+item_4/id = 4
+
 [node name="DiscardDialog" type="ConfirmationDialog" parent="."]
 unique_name_in_owner = true
 title = "Registrazioni temporanee"
